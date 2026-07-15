@@ -1,0 +1,9 @@
+{
+    "scripts": {
+        "format": "prettier --write . --list-different"
+    },
+    "devDependencies": {
+        "prettier": "3.8.1",
+        "prettier-plugin-blade": "3.1.4"
+    }
+}

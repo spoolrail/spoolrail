@@ -1,0 +1,51 @@
+# MacOS
+.DS_Store
+Thumbs.db
+
+# Composer
+composer.lock
+vendor/
+/auth.json
+
+# NPM
+package-lock.json
+/node_modules
+/.npmrc
+
+# Environment
+.env
+.env.backup
+
+# Editors
+.idea/
+.zed/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.phpactor.json
+
+# Caches
+.phpunit.cache/
+.php-cs-fixer.cache
+
+# Log files
+*.log
+
+# Local configuration overrides
+phpunit.xml
+phpstan.neon
+
+# Agents
+.agents/
+.claude/
+.codex/
+.questline/
+.cursor/
+.gemini/
+.github/skills/
+.junie/
+.mcp.json
+opencode.json
+skills-lock.json
+CLAUDE.md
+GEMINI.md

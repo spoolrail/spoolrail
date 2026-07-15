@@ -1,0 +1,60 @@
+{
+    "name": "spoolrail/spoolrail",
+    "description": "Message broker library made native to Laravel for building resilient distributed systems",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "illuminate/contracts": "^12.0||^13.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.0",
+        "orchestra/testbench": "^10.0||^11.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "rector/rector": "^2.3",
+        "phpstan/phpstan": "^2.1",
+        "driftingly/rector-laravel": "^2.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Spoolrail\\Spoolrail\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Spoolrail\\Spoolrail\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Spoolrail\\Spoolrail\\SpoolrailServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "pest --compact --parallel",
+        "format": [
+            "pint --parallel",
+            "npm run format"
+        ],
+        "analyse": "phpstan",
+        "refactor": "rector",
+        "coverage": "pest --coverage",
+        "coverage:herd": "herd coverage ./vendor/bin/pest --coverage"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "authors": [
+        {
+            "name": "Alexander Diachenko",
+            "email": "xndrbyte@gmail.com"
+        }
+    ]
+}

@@ -1,0 +1,17 @@
+# Files marked with "export-ignore" are excluded from Composer package archives.
+# This ensures only production-ready code is shipped to users when installed via Composer,
+# while keeping development, CI, tests, and documentation inside the Git repository.
+#
+# Composer uses `git archive` to build release ZIPs, which honors these rules.
+# Do NOT remove unless you want all dev files to be distributed to end users.
+/tests               export-ignore
+.editorconfig        export-ignore
+.gitattributes       export-ignore
+.gitignore           export-ignore
+install-git-hooks.sh export-ignore
+phpstan.neon.dist    export-ignore
+phpunit.xml.dist     export-ignore
+pint.json            export-ignore
+README.md            export-ignore
+rector.php           export-ignore
+

@@ -1,0 +1,8 @@
+includes:
+    - vendor/pestphp/pest/extension.neon
+
+parameters:
+	level: max
+	paths:
+		- config
+		- src
