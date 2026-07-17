@@ -8,7 +8,7 @@
 
 ## Test Suites
 
-- `tests/Feature`: default. Test package behavior through its public API surface — service provider registration, facades, config resolution, middleware, commands, routes. Organize in subfolders by integration point when useful.
+- `tests/Feature`: default. Test package behavior from the documented public API inward, asserting only externally observable outcomes. Test internal machinery in `Unit`.
 - `tests/Unit`: tests for individual classes, mirroring `src/` namespaces. Strict isolation NOT required.
 - `tests/External`: real interactions with external services (no mocking), organized by provider.
 
@@ -18,8 +18,8 @@ Unmocked external calls belong in `tests/External` only. Drivers that don't hit 
 
 Always use `Test.php` suffix.
 
+- **Feature**: group scenarios for the same action in one `{Verb}{Noun}Test.php` file (e.g. `CreateOrderTest.php`, `SendInvitationTest.php`). The action owns the file name regardless of which internal classes implement it.
 - **Unit**: mirror the class — `{ClassName}Test.php` (e.g. `UserTest.php`, `CreateUserJobTest.php`).
-- **Feature**: mirror the behavior or class under test — `{BehaviorOrClassName}Test.php` (e.g. `ServiceProviderTest.php`, `FlushRecordsCommandTest.php`).
 - **External**: descriptive names reflecting what's tested (e.g. `StripeWebhookTest.php`).
 
 ## Test Descriptions
@@ -37,6 +37,8 @@ Prefer explicit, single-purpose assertions over dense chained helpers.
 ## Execution
 
 Run the smallest test scope that proves the change, then expand when risk increases.
+
+Test against the currently installed dependencies by default. Run compatibility tests across multiple framework versions only at major project milestones or when explicitly requested.
 
 ```bash
 composer test -- --filter='can test'

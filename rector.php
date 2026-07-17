@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Rector\CodingStyle\Rector\Encapsed\EncapsedStringsToSprintfRector;
+use Rector\CodingStyle\Rector\Encapsed\WrapEncapsedVariableInCurlyBracesRector;
 use Rector\Config\RectorConfig;
 use Rector\Php81\Rector\Property\ReadOnlyPropertyRector;
 use Rector\Set\ValueObject\SetList;
@@ -22,6 +23,7 @@ return RectorConfig::configure()
     ->withSkip([
         ReadOnlyPropertyRector::class,
         EncapsedStringsToSprintfRector::class,
+        WrapEncapsedVariableInCurlyBracesRector::class,
     ])
     ->withSets([
         SetList::DEAD_CODE,

@@ -3,14 +3,21 @@
 ## General
 
 - Prefer guard clauses and straight-line control flow; keep nesting shallow.
-- Avoid boolean flags — prefer distinct methods, named option objects, or separate functions.
+- Use separate operations instead of boolean parameters that select distinct behaviors.
 - Favor Laravel collection methods when they are at least as clear as the equivalent loop.
 - MUST NOT use `final`.
-- All class properties, method parameters, and return types MUST have type declarations.
-- Use docblocks only to expand on complex types (arrays, collections) or when a description adds context beyond the signature.
+- Add type declarations to package-owned code wherever compatible with PHP and framework contracts and conventions.
+- Use docblocks only when they add information native PHP declarations cannot express.
+- Inline single-use locals when the resulting expression remains clear.
 - Prefer string interpolation over `sprintf()` or `.` concatenation. Use concatenation for multi-line or complex strings when it improves readability.
 - Use `$var` instead of `{$var}` in interpolated strings unless required for disambiguation.
-- Read `config()` inline at call sites with explicit defaults — no pass-through wrappers.
+- Access configuration where it is interpreted, with explicit defaults; avoid wrappers that only relay values.
+
+## Configuration Files
+
+- Use environment variables only for deployment-specific values. Provide defaults only when safe and meaningful.
+- In multi-section configuration files, use blank lines inside the outer array and between top-level groups or multi-line sibling configurations.
+- Use Laravel-style section comments when a top-level group needs a heading or explanation; document only behavior or constraints not evident from its keys and defaults.
 
 ## Method Complexity
 
@@ -28,6 +35,13 @@ Methods should operate at a single level of abstraction — describe _what_ happ
 - Let exceptions bubble to the host application or framework boundary by default.
 - Add `try/catch` only when it meaningfully changes behavior: a fallback path, retry, or converting to a domain exception. Never use it for routine control flow.
 - Use `finally` only for guaranteed resource cleanup (locks, temp files, external handles).
+- Group domain exceptions by stable, caller-relevant failure categories rather than throw sites.
+- Choose an exception's base class according to the catch boundary callers need, preferring the closest suitable SPL or framework exception class.
+- Domain exception classes own their meaningful messages; use named constructors when they clarify distinct failure cases.
+
+### Packages
+
+- Package-defined exceptions also implement a shared marker interface, providing a package-wide catch boundary independently of their base class.
 
 ## Controllers
 
@@ -39,7 +53,7 @@ Omit Abstract/Interface/Contract/Trait from class names.
 
 Treat acronyms as words (`HttpClient`, not `HTTPClient`). Exception: two-letter acronyms (`ID`, `UI`).
 
-Booleans: prefix with `is`, `has`, `can`, `should`.
+Name package-owned booleans as clear predicates, typically with `is`, `has`, `can`, or `should`.
 
 - **Actions**: `VerbNounAction`, e.g. `CreateOrderAction`, `SendInvitationAction`.
 - **Commands**: Mirror the Artisan signature, kebab-case multi-word, e.g. `package:flush-records` → `FlushRecordsCommand`.

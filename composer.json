@@ -13,7 +13,7 @@
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0",
         "rector/rector": "^2.3",
-        "phpstan/phpstan": "^2.1",
+        "larastan/larastan": "^3.10",
         "driftingly/rector-laravel": "^2.1"
     },
     "autoload": {
@@ -39,7 +39,7 @@
             "pint --parallel",
             "npm run format"
         ],
-        "analyse": "phpstan",
+        "analyse": "phpstan --memory-limit=1G",
         "refactor": "rector",
         "coverage": "pest --coverage",
         "coverage:herd": "herd coverage ./vendor/bin/pest --coverage"

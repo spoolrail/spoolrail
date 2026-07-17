@@ -1,7 +1,7 @@
 # AI Guide
 
-Consult these docs as needed based on the task at hand:
+Read every guide whose scope matches the task:
 
-- `.ai/docs/overview.md` — package scope and architecture
-- `.ai/docs/conventions.md` — coding style and design rules
-- `.ai/docs/testing.md` — test approach, naming, and execution
+- `.ai/docs/overview.md` — planning, changing, reviewing, or documenting package behavior, public APIs, architecture, or component responsibilities
+- `.ai/docs/conventions.md` — planning, changing, or reviewing PHP code, including tests
+- `.ai/docs/testing.md` — changing or reviewing behavior or tests, choosing test placement or names, or verifying code changes

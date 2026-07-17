@@ -1,0 +1,2 @@
+providers:
+  - Spoolrail\Spoolrail\SpoolrailServiceProvider

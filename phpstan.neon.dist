@@ -1,8 +1,11 @@
 includes:
+    - vendor/larastan/larastan/extension.neon
     - vendor/pestphp/pest/extension.neon
 
 parameters:
-	level: max
-	paths:
-		- config
-		- src
+    level: max
+    configDirectories:
+        - config
+    paths:
+        - config
+        - src
