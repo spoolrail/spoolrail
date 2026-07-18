@@ -40,7 +40,7 @@
         "editor.formatOnSave": true
     },
     "prettier.prettierPath": "./node_modules/prettier/index.cjs",
-    "prettier.configPath": ".prettierrc.json",
+    "prettier.configPath": ".prettierrc",
     "prettier.requireConfig": true,
     "prettier.ignorePath": ".prettierignore"
 }

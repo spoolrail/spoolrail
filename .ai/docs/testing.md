@@ -30,6 +30,10 @@ Pattern: `<present-tense verb> <observable outcome> [when <condition>]`
 test('returns validation errors when required registration fields are missing', function () {});
 ```
 
+## Test Structure
+
+Structure tests with meaningful setup, action, and verification work in explicit Arrange, Act, and Assert phases, using the matching `// --- Arrange ---`, `// --- Act ---`, and `// --- Assert ---` banner comments. Keep tests without three meaningful phases direct.
+
 ## Assertions
 
 Prefer explicit, single-purpose assertions over dense chained helpers.
