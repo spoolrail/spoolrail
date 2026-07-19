@@ -1,0 +1,35 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Spoolrail\Spoolrail\Exceptions;
+
+use InvalidArgumentException;
+
+class InvalidConfigurationException extends InvalidArgumentException implements SpoolrailException
+{
+    public static function invalidDefaultConnection(): self
+    {
+        return new self('Spoolrail default connection must be a non-empty string.');
+    }
+
+    public static function undefinedConnection(string $connection): self
+    {
+        return new self("Spoolrail connection [$connection] is not defined.");
+    }
+
+    public static function connectionMustBeArray(string $connection): self
+    {
+        return new self("Spoolrail connection [$connection] configuration must be an array.");
+    }
+
+    public static function missingDriver(string $connection): self
+    {
+        return new self("Spoolrail connection [$connection] must define a non-empty string [driver].");
+    }
+
+    public static function unsupportedDriver(string $driver): self
+    {
+        return new self("Spoolrail driver [$driver] is not supported.");
+    }
+}

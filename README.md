@@ -1,6 +1,6 @@
 # Spoolrail
 
-Message broker library made native to Laravel for building resilient distributed systems
+Spoolrail is a Laravel-native message broker package for publishing portable messages and handing consumed deliveries into Laravel Queue.
 
 ## Installation
 
@@ -58,7 +58,7 @@ If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-de
 To validate compatibility with Laravel 12 without editing `composer.json`:
 
 ```bash
-composer update illuminate/contracts:^12.0 orchestra/testbench:^10.0 pestphp/pest:^4.0 pestphp/pest-plugin-laravel:^4.0 -W
+composer update illuminate/console:^12.0 illuminate/contracts:^12.0 illuminate/support:^12.0 orchestra/testbench:^10.0 pestphp/pest:^4.0 pestphp/pest-plugin-laravel:^4.0 -W
 ```
 
 ### Claude Setup (Optional)
