@@ -4,7 +4,7 @@
 
 - Use Pest + Orchestra Testbench, and keep the test namespace aligned with Composer `autoload-dev`.
 - For behavior changes and bug fixes, prefer starting with a failing test that captures the expected outcome, then implement the change.
-- Avoid mocks unless the dependency crosses an external I/O boundary or would make the test impractical to run locally. Prefer real application objects.
+- Avoid mocks unless the dependency crosses an external I/O boundary, represents a supported extension point, has behavior that is already proved more directly elsewhere, or would make the test impractical to run locally. Prefer real application objects.
 
 ## Test Suites
 
@@ -13,6 +13,10 @@
 - `tests/External`: real interactions with external services (no mocking), organized by provider.
 
 Unmocked external calls belong in `tests/External` only. Drivers that don't hit external services belong in `Unit`; drivers that do belong in `External`.
+
+## Fixtures
+
+Place fixture classes and files in `tests/Fixtures`.
 
 ## File Naming
 
