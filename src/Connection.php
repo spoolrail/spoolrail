@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail;
 
 use Carbon\CarbonImmutable;
+use Closure;
 use Spoolrail\Spoolrail\Contracts\Driver;
-use Spoolrail\Spoolrail\Serialization\MessageSerializer;
 
 class Connection
 {
@@ -23,5 +23,13 @@ class Connection
         $this->driver->publish($topic, $body);
 
         return $candidate;
+    }
+
+    /**
+     * @param  Closure(string): void  $handoff
+     */
+    public function consume(string $subscription, Closure $handoff): void
+    {
+        $this->driver->consume($subscription, $handoff);
     }
 }

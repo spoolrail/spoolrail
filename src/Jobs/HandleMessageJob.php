@@ -19,7 +19,7 @@ class HandleMessageJob
 
     public function handle(SubscriptionRegistry $subscriptions, Container $container): void
     {
-        $definition = $subscriptions->get($this->subscription);
+        $definition = $subscriptions->getForQueuedMessage($this->subscription);
         $handler = $container->get($definition->handler());
 
         $handler->handle($this->message);

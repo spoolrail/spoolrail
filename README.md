@@ -58,7 +58,14 @@ If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-de
 To validate compatibility with Laravel 12 without editing `composer.json`:
 
 ```bash
-composer update illuminate/console:^12.0 illuminate/contracts:^12.0 illuminate/support:^12.0 orchestra/testbench:^10.0 pestphp/pest:^4.0 pestphp/pest-plugin-laravel:^4.0 -W
+composer update -W \
+    illuminate/console:^12.0 \
+    illuminate/contracts:^12.0 \
+    illuminate/queue:^12.0 \
+    illuminate/support:^12.0 \
+    orchestra/testbench:^10.0 \
+    pestphp/pest:^4.0 \
+    pestphp/pest-plugin-laravel:^4.0
 ```
 
 ### Claude Setup (Optional)

@@ -10,15 +10,15 @@ use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
-use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
-use Spoolrail\Spoolrail\Exceptions\ConnectionNotConsumableException;
+use Spoolrail\Spoolrail\Exceptions\DatabaseQueueTransactionException;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingArrayDriver;
 
 test('routes each subscription through its topic and configured Spoolrail connection', function (): void {
     // --- Arrange ---
@@ -65,6 +65,45 @@ test('routes each subscription through its topic and configured Spoolrail connec
     expect($afterOrders)->toBe(['A-42']);
     expect($afterReturns)->toBe(['A-42', 'R-21']);
     expect($afterSecondary)->toBe(['A-42', 'R-21', 'B-84']);
+});
+
+test('keeps queued-message drain names out of broker publication and consumption', function (): void {
+    // --- Arrange ---
+    config()->set('queue.default', 'sync');
+
+    $handled = [];
+    $handler = Mockery::mock(MessageHandler::class);
+    $handler->shouldReceive('handle')
+        ->once()
+        ->andReturnUsing(function (Message $message) use (&$handled): void {
+            $handled[] = $message;
+        });
+    app()->instance(MessageHandler::class, $handler);
+
+    Spoolrail::subscribe('orders', 'warehouse-order-processing-v2', MessageHandler::class)
+        ->drainMessagesQueuedFor('warehouse-order-processing');
+
+    $published = Spoolrail::publish(
+        'orders',
+        Message::make('order.created', ['reference' => 'A-42']),
+    );
+
+    // --- Act ---
+    $formerNameFailure = null;
+
+    try {
+        $this->artisan('spoolrail:consume warehouse-order-processing')->run();
+    } catch (Throwable $exception) {
+        $formerNameFailure = $exception;
+    }
+
+    $handledUnderFormerName = $handled;
+    $this->artisan('spoolrail:consume warehouse-order-processing-v2')->run();
+
+    // --- Assert ---
+    expect($formerNameFailure)->toBeInstanceOf(InvalidSubscriptionException::class);
+    expect($handledUnderFormerName)->toBe([]);
+    expect($handled)->toEqual([$published]);
 });
 
 test('gives each matching subscription one independently hydrated delivery', function (): void {
@@ -177,9 +216,16 @@ test('uses the subscription Laravel Queue connection and queue overrides', funct
     expect($database->table('conventional_jobs')->count())->toBe(0);
 });
 
-test('pushes a delivery before an open database transaction commits', function (): void {
+test('rejects an open transaction on the database Queue connection without losing the delivery', function (string $transactionApi): void {
     // --- Arrange ---
     createConsumeSubscriptionJobsTable('transaction_jobs');
+
+    $driver = new RecordingArrayDriver(
+        'array',
+        'array',
+        app(SubscriptionRegistry::class),
+    );
+    Spoolrail::extend('array', fn (): ArrayDriver => $driver);
 
     config()->set('queue.default', 'transaction-database');
     config()->set('queue.connections.transaction-database', [
@@ -195,17 +241,86 @@ test('pushes a delivery before an open database transaction commits', function (
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     $database = DB::connection('testing');
-    $database->beginTransaction();
+    $pdo = $database->getPdo();
+
+    if ($transactionApi === 'laravel') {
+        $database->beginTransaction();
+    } else {
+        $pdo->beginTransaction();
+    }
 
     try {
         // --- Act ---
-        $this->artisan('spoolrail:consume transaction-orders')->run();
+        $failure = null;
 
-        // --- Assert ---
-        expect($database->table('transaction_jobs')->count())->toBe(1);
+        try {
+            $this->artisan('spoolrail:consume transaction-orders')->run();
+        } catch (Throwable $exception) {
+            $failure = $exception;
+        }
+
+        $queuedBeforeRollback = $database->table('transaction_jobs')->count();
+        $consumeCallsBeforeRetry = $driver->consumeCalls;
     } finally {
-        $database->rollBack();
+        if ($transactionApi === 'laravel') {
+            $database->rollBack();
+        } else {
+            $pdo->rollBack();
+        }
     }
+
+    $this->artisan('spoolrail:consume transaction-orders')->run();
+    $consumeCallsAfterRetry = $driver->consumeCalls;
+
+    // --- Assert ---
+    expect($failure)->toBeInstanceOf(DatabaseQueueTransactionException::class);
+    expect($failure?->getMessage())->toBe(
+        "Laravel's database Queue cannot accept a Spoolrail handoff while its connection has an open transaction. Commit or roll back that transaction before consuming, or use another Queue connection.",
+    );
+    expect($queuedBeforeRollback)->toBe(0);
+    expect($consumeCallsBeforeRetry)->toBe(0);
+    expect($database->table('transaction_jobs')->pluck('queue')->all())->toBe(['transaction-default']);
+    expect($consumeCallsAfterRetry)->toBe(1);
+})->with([
+    'Laravel connection API' => 'laravel',
+    'direct PDO API' => 'pdo',
+]);
+
+test('uses a database Queue while an unrelated database connection has an open transaction', function (): void {
+    // --- Arrange ---
+    createConsumeSubscriptionJobsTable('independent_transaction_jobs');
+
+    config()->set('database.connections.unrelated', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+        'prefix' => '',
+    ]);
+    config()->set('queue.default', 'independent-transaction-database');
+    config()->set('queue.connections.independent-transaction-database', [
+        'driver' => 'database',
+        'connection' => 'testing',
+        'table' => 'independent_transaction_jobs',
+        'queue' => 'independent-default',
+        'retry_after' => 90,
+        'after_commit' => true,
+    ]);
+
+    Spoolrail::subscribe('orders', 'independent-transaction-orders', NoopMessageHandler::class);
+    Spoolrail::publish('orders', Message::make('order.created', []));
+
+    $unrelated = DB::connection('unrelated');
+    $unrelated->beginTransaction();
+
+    try {
+        // --- Act ---
+        $this->artisan('spoolrail:consume independent-transaction-orders')->run();
+    } finally {
+        $unrelated->rollBack();
+    }
+
+    // --- Assert ---
+    expect(DB::connection('testing')->table('independent_transaction_jobs')->pluck('queue')->all())
+        ->toBe(['independent-default']);
 });
 
 test('leaves queued handler failures to Laravel Queue without redelivering the source delivery', function (): void {
@@ -311,10 +426,11 @@ test('propagates a rejected Queue handoff without logging or losing buffered del
     Spoolrail::publish('orders', Message::make('order.created', ['sequence' => 1]));
     Spoolrail::publish('orders', Message::make('order.created', ['sequence' => 2]));
 
+    $handoffFailure = new RuntimeException('Queue is unavailable.');
     $queue = Mockery::mock(QueueContract::class);
     $queue->shouldReceive('push')
         ->once()
-        ->andThrow(new RuntimeException('Queue is unavailable.'));
+        ->andThrow($handoffFailure);
 
     $failingQueues = Mockery::mock(QueueFactory::class);
     $failingQueues->shouldReceive('connection')
@@ -340,13 +456,12 @@ test('propagates a rejected Queue handoff without logging or losing buffered del
         $handled,
     );
 
-    expect($failure)->toBeInstanceOf(RuntimeException::class);
-    expect($failure?->getMessage())->toBe('Queue is unavailable.');
+    expect($failure)->toBe($handoffFailure);
     expect($sequences)->toBe([1, 2]);
     Event::assertNotDispatched(MessageLogged::class);
 });
 
-test('leaves malformed JSON unacknowledged and stops the current delivery drain', function (): void {
+test('redelivers malformed JSON and stops the current delivery drain', function (): void {
     // --- Arrange ---
     config()->set('spoolrail.connections.malformed', ['driver' => 'malformed']);
 
@@ -362,7 +477,7 @@ test('leaves malformed JSON unacknowledged and stops the current delivery drain'
         'array',
         app(SubscriptionRegistry::class),
     );
-    $driver->publish('orders', '{"id":');
+    $driver->publish('orders', '');
     $driver->publish('orders', consumeSubscriptionEnvelope(['sequence' => 2]));
 
     Spoolrail::extend('malformed', fn (): ArrayDriver => $driver);
@@ -405,30 +520,6 @@ test('rejects an unknown subscription', function (): void {
     // --- Assert ---
     expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
     expect($failure?->getMessage())->toBe('Subscription [missing-subscription] has not been registered.');
-});
-
-test('rejects a subscription whose broker connection cannot consume', function (): void {
-    // --- Arrange ---
-    config()->set('spoolrail.connections.publish-only', ['driver' => 'publish-only']);
-
-    $driver = Mockery::mock(Driver::class);
-    Spoolrail::extend('publish-only', fn (): Driver => $driver);
-
-    Spoolrail::subscribe('orders', 'publish-only-orders', NoopMessageHandler::class)
-        ->onConnection('publish-only');
-
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $this->artisan('spoolrail:consume publish-only-orders')->run();
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(ConnectionNotConsumableException::class);
-    expect($failure?->getMessage())->toBe('Spoolrail connection [publish-only] does not support consumption.');
 });
 
 function createConsumeSubscriptionJobsTable(string $table = 'jobs'): void

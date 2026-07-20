@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\Serialization\MessageSerializer;
+use Spoolrail\Spoolrail\MessageSerializer;
 
 test('serializes the exact wire envelope', function (): void {
     // --- Arrange ---

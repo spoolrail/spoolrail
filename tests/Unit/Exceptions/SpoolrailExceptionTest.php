@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Exceptions\ConnectionNotConsumableException;
+use Spoolrail\Spoolrail\Exceptions\DatabaseQueueTransactionException;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageException;
@@ -25,5 +25,5 @@ test('keeps package exceptions within package and caller-relevant SPL catch boun
     'invalid message' => [InvalidMessageException::class, InvalidArgumentException::class],
     'invalid message envelope' => [InvalidMessageEnvelopeException::class, UnexpectedValueException::class],
     'invalid subscription' => [InvalidSubscriptionException::class, InvalidArgumentException::class],
-    'non-consumable connection' => [ConnectionNotConsumableException::class, LogicException::class],
+    'transactional database Queue' => [DatabaseQueueTransactionException::class, LogicException::class],
 ]);

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
+use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
 
-test('rejects blank connection and queue settings', function (Closure $configure, string $message): void {
+test('rejects blank subscription settings', function (Closure $configure, string $message): void {
     // --- Arrange ---
-    $subscription = new Subscription('orders', 'warehouse-orders', NoopMessageHandler::class);
+    $subscription = (new SubscriptionRegistry)
+        ->subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
 
     // --- Act ---
     $failure = null;
@@ -34,5 +36,9 @@ test('rejects blank connection and queue settings', function (Closure $configure
     'queue' => [
         fn (Subscription $subscription): Subscription => $subscription->onQueue('   '),
         'Queue must not be empty.',
+    ],
+    'queued subscription' => [
+        fn (Subscription $subscription): Subscription => $subscription->drainMessagesQueuedFor('   '),
+        'Queued message subscription name must not be empty.',
     ],
 ]);

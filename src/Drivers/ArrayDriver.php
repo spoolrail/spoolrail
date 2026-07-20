@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Drivers;
 
 use Closure;
-use Spoolrail\Spoolrail\Contracts\ConsumableDriver;
-use Spoolrail\Spoolrail\Contracts\Delivery;
+use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Throwable;
 
-class ArrayDriver implements ConsumableDriver
+class ArrayDriver implements Driver
 {
     /** @var array<string, list<string>> */
     private array $deliveries = [];
@@ -32,38 +32,32 @@ class ArrayDriver implements ConsumableDriver
     }
 
     /**
-     * @param  Closure(Delivery): void  $handle
+     * @param  Closure(string): void  $handoff
      */
-    public function consume(string $subscription, Closure $handle): void
+    public function consume(string $subscription, Closure $handoff): void
     {
-        while ($delivery = $this->nextDelivery($subscription)) {
+        while (($body = $this->nextDelivery($subscription)) !== null) {
             try {
-                $handle($delivery);
-            } finally {
-                if (! $delivery->isAcknowledged()) {
-                    $this->release($subscription, $delivery);
-                }
-            }
+                $handoff($body);
+            } catch (Throwable $exception) {
+                $this->release($subscription, $body);
 
-            if (! $delivery->isAcknowledged()) {
-                return;
+                throw $exception;
             }
         }
     }
 
-    private function nextDelivery(string $subscription): ?ArrayDelivery
+    private function nextDelivery(string $subscription): ?string
     {
         if (($this->deliveries[$subscription] ?? []) === []) {
             return null;
         }
 
-        $body = array_shift($this->deliveries[$subscription]);
-
-        return new ArrayDelivery($body);
+        return array_shift($this->deliveries[$subscription]);
     }
 
-    private function release(string $subscription, ArrayDelivery $delivery): void
+    private function release(string $subscription, string $body): void
     {
-        array_unshift($this->deliveries[$subscription], $delivery->body());
+        array_unshift($this->deliveries[$subscription], $body);
     }
 }

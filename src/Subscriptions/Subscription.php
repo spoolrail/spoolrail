@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Subscriptions;
 
+use Closure;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 
@@ -17,11 +18,13 @@ class Subscription
 
     /**
      * @param  class-string<MessageHandler>  $handler
+     * @param  Closure(string): void  $registerQueuedMessageSubscription
      */
     public function __construct(
         private readonly string $topic,
         private readonly string $name,
         private readonly string $handler,
+        private readonly Closure $registerQueuedMessageSubscription,
     ) {}
 
     public function topic(): string
@@ -59,6 +62,15 @@ class Subscription
     public function onQueue(string $queue): self
     {
         $this->queue = $this->requireName($queue, 'Queue');
+
+        return $this;
+    }
+
+    public function drainMessagesQueuedFor(string $subscription): self
+    {
+        ($this->registerQueuedMessageSubscription)(
+            $this->requireName($subscription, 'Queued message subscription name'),
+        );
 
         return $this;
     }

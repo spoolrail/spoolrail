@@ -7,11 +7,9 @@ namespace Spoolrail\Spoolrail;
 use Closure;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
-use Spoolrail\Spoolrail\Contracts\ConsumableDriver;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
-use Spoolrail\Spoolrail\Serialization\MessageSerializer;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
 class SpoolrailManager
@@ -86,7 +84,7 @@ class SpoolrailManager
             };
         }
 
-        return $this->wrap($instance);
+        return new Connection($instance, $this->serializer);
     }
 
     /**
@@ -128,14 +126,5 @@ class SpoolrailManager
             $this->getDefaultConnection(),
             $this->app->make(SubscriptionRegistry::class),
         );
-    }
-
-    private function wrap(Driver $driver): Connection
-    {
-        if ($driver instanceof ConsumableDriver) {
-            return new ConsumableConnection($driver, $this->serializer);
-        }
-
-        return new Connection($driver, $this->serializer);
     }
 }

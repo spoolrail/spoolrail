@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Console;
 
 use Illuminate\Console\Command;
-use Spoolrail\Spoolrail\Consumers\SubscriptionConsumer;
+use Spoolrail\Spoolrail\Subscriptions\SubscriptionConsumer;
 
 class ConsumeCommand extends Command
 {

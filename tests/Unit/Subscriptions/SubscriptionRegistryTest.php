@@ -47,6 +47,76 @@ test('rejects a duplicate name without replacing the registered subscription', f
     expect($current)->toBe($registered);
 });
 
+test('rejects a queued-message drain name already used by an active subscription', function (): void {
+    // --- Arrange ---
+    $subscriptions = new SubscriptionRegistry;
+    $subscriptions->subscribe('orders', 'warehouse-order-processing', NoopMessageHandler::class);
+    $replacement = $subscriptions->subscribe(
+        'orders',
+        'warehouse-order-processing-v2',
+        NoopMessageHandler::class,
+    );
+
+    // --- Act ---
+    $failure = null;
+
+    try {
+        $replacement->drainMessagesQueuedFor('warehouse-order-processing');
+    } catch (Throwable $exception) {
+        $failure = $exception;
+    }
+
+    // --- Assert ---
+    expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
+});
+
+test('rejects an active subscription name already used for queued-message draining', function (): void {
+    // --- Arrange ---
+    $subscriptions = new SubscriptionRegistry;
+    $replacement = $subscriptions
+        ->subscribe('orders', 'warehouse-order-processing-v2', NoopMessageHandler::class)
+        ->drainMessagesQueuedFor('warehouse-order-processing');
+
+    // --- Act ---
+    $failure = null;
+
+    try {
+        $subscriptions->subscribe('orders', 'warehouse-order-processing', NoopMessageHandler::class);
+    } catch (Throwable $exception) {
+        $failure = $exception;
+    }
+
+    // --- Assert ---
+    expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
+    expect($subscriptions->getForQueuedMessage('warehouse-order-processing'))->toBe($replacement);
+});
+
+test('rejects a queued-message drain name already claimed by another subscription', function (): void {
+    // --- Arrange ---
+    $subscriptions = new SubscriptionRegistry;
+    $firstReplacement = $subscriptions
+        ->subscribe('orders', 'warehouse-order-processing-v2', NoopMessageHandler::class)
+        ->drainMessagesQueuedFor('warehouse-order-processing');
+    $secondReplacement = $subscriptions->subscribe(
+        'orders',
+        'warehouse-order-processing-v3',
+        NoopMessageHandler::class,
+    );
+
+    // --- Act ---
+    $failure = null;
+
+    try {
+        $secondReplacement->drainMessagesQueuedFor('warehouse-order-processing');
+    } catch (Throwable $exception) {
+        $failure = $exception;
+    }
+
+    // --- Assert ---
+    expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
+    expect($subscriptions->getForQueuedMessage('warehouse-order-processing'))->toBe($firstReplacement);
+});
+
 test('rejects handlers outside the message handler contract without reserving the subscription name', function (): void {
     // --- Arrange ---
     $subscriptions = new SubscriptionRegistry;

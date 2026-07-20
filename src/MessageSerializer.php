@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Spoolrail\Spoolrail\Serialization;
+namespace Spoolrail\Spoolrail;
 
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
@@ -10,7 +10,6 @@ use DateTimeZone;
 use Ramsey\Uuid\Rfc4122\FieldsInterface;
 use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
-use Spoolrail\Spoolrail\Message;
 
 /**
  * @internal

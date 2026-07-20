@@ -7,7 +7,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\Serialization\MessageSerializer;
+use Spoolrail\Spoolrail\MessageSerializer;
 
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
