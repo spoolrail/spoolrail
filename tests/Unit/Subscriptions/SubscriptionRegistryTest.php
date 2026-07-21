@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Spoolrail\Spoolrail\Tests\Fixtures\AbstractMessageHandler;
 use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
 
 test('selects subscriptions assigned to the requested broker connection', function (): void {
@@ -135,6 +137,31 @@ test('rejects handlers outside the message handler contract without reserving th
     // --- Assert ---
     expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
 });
+
+test('rejects non-concrete message handlers without reserving the subscription name', function (string $handler): void {
+    // --- Arrange ---
+    $subscriptions = new SubscriptionRegistry;
+
+    // --- Act ---
+    $failure = null;
+
+    try {
+        $subscriptions->subscribe('orders', 'warehouse-orders', $handler);
+    } catch (InvalidSubscriptionException $exception) {
+        $failure = $exception;
+    }
+
+    $subscriptions->subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
+
+    // --- Assert ---
+    expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
+    expect($failure?->getMessage())->toBe(
+        "Subscription handler [$handler] must be a concrete class implementing ".MessageHandler::class.'.',
+    );
+})->with([
+    'interface' => MessageHandler::class,
+    'abstract class' => AbstractMessageHandler::class,
+]);
 
 test('rejects blank subscription identifiers', function (string $topic, string $name, string $message): void {
     // --- Arrange ---

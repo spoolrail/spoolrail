@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Subscriptions;
 
+use ReflectionClass;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 
@@ -29,6 +30,12 @@ class SubscriptionRegistry
         }
 
         if (! is_a($handler, MessageHandler::class, true)) {
+            throw InvalidSubscriptionException::invalidHandler($handler);
+        }
+
+        $reflection = new ReflectionClass($handler);
+
+        if ($reflection->isInterface() || $reflection->isAbstract() || $reflection->isEnum()) {
             throw InvalidSubscriptionException::invalidHandler($handler);
         }
 

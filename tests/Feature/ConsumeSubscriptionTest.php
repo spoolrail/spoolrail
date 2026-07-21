@@ -10,7 +10,6 @@ use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
-use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Exceptions\DatabaseQueueTransactionException;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
@@ -26,16 +25,16 @@ test('routes each subscription through its topic and configured Spoolrail connec
     config()->set('queue.default', 'sync');
 
     $handled = [];
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->shouldReceive('handle')
         ->andReturnUsing(function (Message $message) use (&$handled): void {
             $handled[] = $message;
         });
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'warehouse-orders', MessageHandler::class);
-    Spoolrail::subscribe('returns', 'warehouse-returns', MessageHandler::class);
-    Spoolrail::subscribe('orders', 'secondary-orders', MessageHandler::class)
+    Spoolrail::subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
+    Spoolrail::subscribe('returns', 'warehouse-returns', NoopMessageHandler::class);
+    Spoolrail::subscribe('orders', 'secondary-orders', NoopMessageHandler::class)
         ->onConnection('secondary');
 
     Spoolrail::publish(
@@ -72,15 +71,15 @@ test('keeps queued-message drain names out of broker publication and consumption
     config()->set('queue.default', 'sync');
 
     $handled = [];
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->shouldReceive('handle')
         ->once()
         ->andReturnUsing(function (Message $message) use (&$handled): void {
             $handled[] = $message;
         });
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'warehouse-order-processing-v2', MessageHandler::class)
+    Spoolrail::subscribe('orders', 'warehouse-order-processing-v2', NoopMessageHandler::class)
         ->drainMessagesQueuedFor('warehouse-order-processing');
 
     $published = Spoolrail::publish(
@@ -111,15 +110,15 @@ test('gives each matching subscription one independently hydrated delivery', fun
     config()->set('queue.default', 'sync');
 
     $handled = [];
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->shouldReceive('handle')
         ->andReturnUsing(function (Message $message) use (&$handled): void {
             $handled[] = $message;
         });
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'first-orders', MessageHandler::class);
-    Spoolrail::subscribe('orders', 'second-orders', MessageHandler::class);
+    Spoolrail::subscribe('orders', 'first-orders', NoopMessageHandler::class);
+    Spoolrail::subscribe('orders', 'second-orders', NoopMessageHandler::class);
 
     $published = Spoolrail::publish(
         'orders',
@@ -339,16 +338,16 @@ test('leaves queued handler failures to Laravel Queue without redelivering the s
     config()->set('queue.failed.driver', 'null');
 
     $attempts = 0;
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->shouldReceive('handle')
         ->andReturnUsing(function () use (&$attempts): void {
             $attempts++;
 
             throw new RuntimeException('Worker handler failed.');
         });
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'worker-failure', MessageHandler::class)
+    Spoolrail::subscribe('orders', 'worker-failure', NoopMessageHandler::class)
         ->onQueueConnection('database');
     Spoolrail::publish('orders', Message::make('order.created', []));
 
@@ -371,7 +370,7 @@ test('redelivers a sync delivery after its handler fails during handoff', functi
     $attempts = 0;
     $handled = 0;
 
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->shouldReceive('handle')
         ->andReturnUsing(function () use (&$shouldFail, &$attempts, &$handled): void {
             $attempts++;
@@ -382,9 +381,9 @@ test('redelivers a sync delivery after its handler fails during handoff', functi
 
             $handled++;
         });
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'sync-failure', MessageHandler::class);
+    Spoolrail::subscribe('orders', 'sync-failure', NoopMessageHandler::class);
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
@@ -413,16 +412,16 @@ test('propagates a rejected Queue handoff without logging or losing buffered del
     Event::fake([MessageLogged::class]);
 
     $handled = [];
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->shouldReceive('handle')
         ->andReturnUsing(function (Message $message) use (&$handled): void {
             $handled[] = $message;
         });
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
     $syncQueues = app(QueueFactory::class);
 
-    Spoolrail::subscribe('orders', 'queue-failure', MessageHandler::class);
+    Spoolrail::subscribe('orders', 'queue-failure', NoopMessageHandler::class);
     Spoolrail::publish('orders', Message::make('order.created', ['sequence' => 1]));
     Spoolrail::publish('orders', Message::make('order.created', ['sequence' => 2]));
 
@@ -465,11 +464,11 @@ test('redelivers malformed JSON and stops the current delivery drain', function 
     // --- Arrange ---
     config()->set('spoolrail.connections.malformed', ['driver' => 'malformed']);
 
-    $handler = Mockery::mock(MessageHandler::class);
+    $handler = Mockery::mock(NoopMessageHandler::class);
     $handler->allows('handle');
-    app()->instance(MessageHandler::class, $handler);
+    app()->instance(NoopMessageHandler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'malformed-orders', MessageHandler::class)
+    Spoolrail::subscribe('orders', 'malformed-orders', NoopMessageHandler::class)
         ->onConnection('malformed');
 
     $driver = new ArrayDriver(

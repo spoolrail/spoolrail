@@ -31,7 +31,7 @@ class InvalidSubscriptionException extends InvalidArgumentException implements S
 
     public static function invalidHandler(string $handler): self
     {
-        return new self("Subscription handler [$handler] must implement ".MessageHandler::class.'.');
+        return new self("Subscription handler [$handler] must be a concrete class implementing ".MessageHandler::class.'.');
     }
 
     public static function emptySetting(string $label): self

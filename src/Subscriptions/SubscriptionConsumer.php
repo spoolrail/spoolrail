@@ -10,6 +10,7 @@ use Illuminate\Queue\DatabaseQueue;
 use PDO;
 use Spoolrail\Spoolrail\Exceptions\DatabaseQueueTransactionException;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
+use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\MessageSerializer;
 use Spoolrail\Spoolrail\SpoolrailManager;
 
@@ -20,6 +21,7 @@ class SubscriptionConsumer
         private readonly SubscriptionRegistry $subscriptions,
         private readonly MessageSerializer $serializer,
         private readonly QueueFactory $queues,
+        private readonly HandlerQueuePolicy $handlerQueuePolicy,
     ) {}
 
     public function consume(string $subscriptionName): void
@@ -44,9 +46,12 @@ class SubscriptionConsumer
     private function handoff(string $body, Subscription $subscription, Queue $queue): void
     {
         $message = $this->serializer->deserialize($body);
+        $job = new HandleMessageJob($message, $subscription->name());
+
+        $this->handlerQueuePolicy->apply($subscription->handler(), $message, $job);
 
         $queue->push(
-            new HandleMessageJob($message, $subscription->name()),
+            $job,
             '',
             $subscription->queue(),
         );
