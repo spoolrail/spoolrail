@@ -1,0 +1,63 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Spoolrail\Spoolrail\Topology;
+
+use Spoolrail\Spoolrail\Exceptions\CurrentPrefixCannotBeRetiredException;
+use Spoolrail\Spoolrail\Exceptions\ManagedTopologyUnavailableException;
+use Spoolrail\Spoolrail\OwnershipPrefix;
+use Spoolrail\Spoolrail\SpoolrailManager;
+use Spoolrail\Spoolrail\Subscriptions\Subscription;
+use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+
+class DeleteUndeclaredSubscriptions
+{
+    public function __construct(
+        private readonly SpoolrailManager $manager,
+        private readonly SubscriptionRegistry $subscriptions,
+        private readonly OwnershipPrefix $prefix,
+    ) {}
+
+    /**
+     * @return list<string>
+     */
+    public function run(string $connectionName, ?string $retiredPrefix): array
+    {
+        $topology = $this->manager->connection($connectionName)->managedTopology()
+            ?? throw new ManagedTopologyUnavailableException($connectionName);
+
+        $currentPrefix = $this->prefix->value();
+        $targetPrefix = $retiredPrefix === null
+            ? $currentPrefix
+            : $this->prefix->validate($retiredPrefix);
+
+        if ($retiredPrefix !== null && $targetPrefix === $currentPrefix) {
+            throw new CurrentPrefixCannotBeRetiredException($currentPrefix);
+        }
+
+        $undeclared = $topology->undeclaredSubscriptions(
+            $retiredPrefix === null ? $this->subscriptionsFor($connectionName) : [],
+            $targetPrefix,
+        );
+
+        foreach ($undeclared as $physicalName) {
+            $topology->deleteSubscription($physicalName);
+        }
+
+        return $undeclared;
+    }
+
+    /**
+     * @return list<Subscription>
+     */
+    private function subscriptionsFor(string $connectionName): array
+    {
+        $default = $this->manager->getDefaultConnection();
+
+        return array_values(array_filter(
+            $this->subscriptions->all(),
+            static fn (Subscription $subscription): bool => $subscription->connection($default) === $connectionName,
+        ));
+    }
+}

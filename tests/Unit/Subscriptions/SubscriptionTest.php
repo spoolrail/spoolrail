@@ -39,6 +39,6 @@ test('rejects blank subscription settings', function (Closure $configure, string
     ],
     'queued subscription' => [
         fn (Subscription $subscription): Subscription => $subscription->drainMessagesQueuedFor('   '),
-        'Queued message subscription name must not be empty.',
+        'Subscription name [   ] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.',
     ],
 ]);

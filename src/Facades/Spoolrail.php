@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Facades;
 
+use Closure;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
+use Override;
 use Spoolrail\Spoolrail\Connection;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Message;
@@ -15,7 +17,7 @@ use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
 /**
  * @method static Connection connection(?string $name = null)
- * @method static SpoolrailManager extend(string $driver, \Closure $creator)
+ * @method static SpoolrailManager extend(string $driver, Closure $creator)
  * @method static void forgetConnection(?string $name = null)
  * @method static Message publish(string $topic, Message $message)
  *
@@ -36,7 +38,7 @@ class Spoolrail extends Facade
             ->subscribe($topic, $name, $handler);
     }
 
-    #[\Override]
+    #[Override]
     protected static function getFacadeAccessor(): string
     {
         return 'spoolrail';

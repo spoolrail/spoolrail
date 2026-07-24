@@ -1,0 +1,640 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Client\Request;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
+use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
+use Spoolrail\Spoolrail\Subscriptions\Subscription;
+use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+
+/**
+ * @param  array<string, array{mixed, int}>  $responses
+ * @return array{RabbitMqTopology, Factory}
+ */
+function rabbitMqTopology(array $responses = []): array
+{
+    $responses = array_replace([
+        'GET overview' => [['rabbitmq_version' => '4.3.2'], 200],
+        'GET vhosts/%2F' => [['default_queue_type' => 'classic'], 200],
+        'GET policies/%2F' => [[], 200],
+        'GET operator-policies/%2F' => [[], 200],
+    ], $responses);
+    $http = new Factory;
+
+    $http->fake(function (Request $request) use ($http, $responses) {
+        $path = parse_url($request->url(), PHP_URL_PATH);
+        $apiPath = is_string($path) ? strstr($path, '/api/') : false;
+        $key = $request->method().' '.($apiPath === false ? '' : substr($apiPath, 5));
+        [$body, $status] = $responses[$key] ?? [[], $request->method() === 'GET' ? 404 : 204];
+
+        return $http->response($body, $status);
+    });
+
+    $connection = new RabbitMqConnectionConfig('events', [
+        'url' => 'amqp://guest:guest@rabbit.internal/%2F',
+        'management' => [
+            'url' => 'https://management.internal',
+        ],
+    ]);
+
+    return [
+        new RabbitMqTopology(
+            $connection,
+            new RabbitMqManagementClient($connection, $http),
+        ),
+        $http,
+    ];
+}
+
+function rabbitMqSubscription(string $topic = 'orders', string $name = 'warehouse'): Subscription
+{
+    return new Subscription(
+        $topic,
+        $name,
+        NoopMessageHandler::class,
+        static function (): void {},
+    );
+}
+
+/**
+ * @return array<string, array{mixed, int}>
+ */
+function compatibleQuorumTopologyResponses(array $arguments = []): array
+{
+    return [
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => 'quorum',
+            'durable' => true,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => $arguments,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse/bindings' => [[
+            [
+                'source' => 'orders',
+                'destination_type' => 'queue',
+                'routing_key' => '',
+                'arguments' => [],
+            ],
+        ], 200],
+    ];
+}
+
+test('rejects missing and unsupported default queue type metadata before creation', function (array $virtualHost, string $reportedType): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET vhosts/%2F' => [$virtualHost, 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)
+        ->toThrow(RabbitMqTopologyException::class, "default queue type [$reportedType]");
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+})->with([
+    'missing metadata' => [['name' => '/'], 'unknown'],
+    'non-string metadata' => [['default_queue_type' => 42], 'unknown'],
+    'stream default' => [['default_queue_type' => 'stream'], 'stream'],
+]);
+
+test('accepts compatible existing topology when the virtual host defaults new queues to streams', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET vhosts/%2F' => [['default_queue_type' => 'stream'], 200],
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => 'classic',
+            'durable' => true,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => [],
+        ], 200],
+        'GET queues/%2F/application-a-warehouse/bindings' => [[
+            [
+                'source' => 'orders',
+                'destination_type' => 'queue',
+                'routing_key' => '',
+                'arguments' => [],
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
+
+    // --- Assert ---
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+});
+
+test('rejects an unsupported broker before planning any mutations', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET overview' => [['rabbitmq_version' => '4.2.9'], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(
+        UnsupportedRabbitMqVersionException::class,
+        'RabbitMQ [4.2.9] is not supported; Spoolrail requires RabbitMQ 4.3 or later.',
+    );
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+});
+
+test('rejects an existing transient queue', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => 'classic',
+            'durable' => false,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => [],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, '[durable] must be true');
+});
+
+test('rejects a wrong or additional queue binding', function (array $bindings): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => 'classic',
+            'durable' => true,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => [],
+        ], 200],
+        'GET queues/%2F/application-a-warehouse/bindings' => [$bindings, 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'must have only one non-default exchange binding');
+})->with([
+    'wrong topic' => [[
+        [
+            'source' => 'returns',
+            'destination_type' => 'queue',
+            'routing_key' => '',
+            'arguments' => [],
+        ],
+    ]],
+    'additional topic' => [[
+        [
+            'source' => 'orders',
+            'destination_type' => 'queue',
+            'routing_key' => '',
+            'arguments' => [],
+        ],
+        [
+            'source' => 'returns',
+            'destination_type' => 'queue',
+            'routing_key' => '',
+            'arguments' => [],
+        ],
+    ]],
+]);
+
+test('accepts compatible existing classic and unlimited quorum queues', function (string $type, array $arguments): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => $type,
+            'durable' => true,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => $arguments,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse/bindings' => [[
+            [
+                'source' => 'orders',
+                'destination_type' => 'queue',
+                'routing_key' => '',
+                'arguments' => [],
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
+
+    // --- Assert ---
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+})->with([
+    'classic' => ['classic', []],
+    'quorum with a declaration limit' => ['quorum', ['x-delivery-limit' => -1]],
+]);
+
+test('accepts an existing quorum queue with an unlimited regular policy', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
+        'GET policies/%2F' => [[
+            [
+                'name' => 'unlimited',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+        ], 200],
+    ]));
+
+    // --- Act ---
+    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
+
+    // --- Assert ---
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+});
+
+test('rejects a finite regular or operator policy', function (string $endpoint): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
+        "GET $endpoint/%2F" => [[
+            [
+                'name' => 'finite',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => 20],
+            ],
+        ], 200],
+    ]));
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
+})->with([
+    'regular policy' => ['policies'],
+    'operator policy' => ['operator-policies'],
+]);
+
+test('rejects a finite delivery limit from any combined source', function (
+    array $arguments,
+    array $policies,
+    array $operatorPolicies,
+): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses($arguments), [
+        'GET policies/%2F' => [$policies, 200],
+        'GET operator-policies/%2F' => [$operatorPolicies, 200],
+    ]));
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
+})->with([
+    'regular policy with unlimited operator policy' => [
+        [],
+        [[
+            'name' => 'finite',
+            'pattern' => '^application-a-',
+            'apply-to' => 'quorum_queues',
+            'priority' => 10,
+            'definition' => ['delivery-limit' => 20],
+        ]],
+        [[
+            'name' => 'unlimited',
+            'pattern' => '^application-a-',
+            'apply-to' => 'quorum_queues',
+            'priority' => 10,
+            'definition' => ['delivery-limit' => -1],
+        ]],
+    ],
+    'declaration with unlimited operator policy' => [
+        ['x-delivery-limit' => 20],
+        [],
+        [[
+            'name' => 'unlimited',
+            'pattern' => '^application-a-',
+            'apply-to' => 'quorum_queues',
+            'priority' => 10,
+            'definition' => ['delivery-limit' => -1],
+        ]],
+    ],
+    'unlimited declaration with regular policy' => [
+        ['x-delivery-limit' => -1],
+        [[
+            'name' => 'finite',
+            'pattern' => '^application-a-',
+            'apply-to' => 'quorum_queues',
+            'priority' => 10,
+            'definition' => ['delivery-limit' => 20],
+        ]],
+        [],
+    ],
+]);
+
+test('rejects a finite regular policy before creating a missing quorum queue', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET vhosts/%2F' => [['default_queue_type' => 'quorum'], 200],
+        'GET policies/%2F' => [[
+            [
+                'name' => 'finite',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => 20],
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+});
+
+test('accepts equal-priority policies only when every possible winner is unlimited', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
+        'GET policies/%2F' => [[
+            [
+                'name' => 'unlimited-a',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+            [
+                'name' => 'unlimited-b',
+                'pattern' => 'warehouse$',
+                'apply-to' => 'queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+        ], 200],
+    ]));
+
+    // --- Act ---
+    $plan = $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($plan)->not->toBeNull();
+});
+
+test('rejects conflicting equal-priority policy winners', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
+        'GET policies/%2F' => [[
+            [
+                'name' => 'unlimited',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+            [
+                'name' => 'finite',
+                'pattern' => 'warehouse$',
+                'apply-to' => 'queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => 20],
+            ],
+        ], 200],
+    ]));
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
+});
+
+test('rejects an indeterminate equal-priority policy tie', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
+        'GET policies/%2F' => [[
+            [
+                'name' => 'unlimited',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+            [
+                'name' => 'unrelated-setting',
+                'pattern' => 'warehouse$',
+                'apply-to' => 'queues',
+                'priority' => 10,
+                'definition' => ['message-ttl' => 60_000],
+            ],
+        ], 200],
+    ]));
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'does not have a verifiable unlimited delivery limit');
+});
+
+test('accepts tied operator policies when every winner preserves an unlimited queue declaration', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET vhosts/%2F' => [['default_queue_type' => 'quorum'], 200],
+        'GET operator-policies/%2F' => [[
+            [
+                'name' => 'unlimited',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+            [
+                'name' => 'unrelated-setting',
+                'pattern' => 'warehouse$',
+                'apply-to' => 'queues',
+                'priority' => 10,
+                'definition' => ['message-ttl' => 60_000],
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
+
+    // --- Assert ---
+    $http->assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
+        && str_ends_with($request->url(), '/api/queues/%2F/application-a-warehouse')
+        && ($request->data()['arguments'] ?? null) === ['x-delivery-limit' => -1]);
+});
+
+test('rejects a finite possible winner among tied operator policies', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology([
+        'GET vhosts/%2F' => [['default_queue_type' => 'quorum'], 200],
+        'GET operator-policies/%2F' => [[
+            [
+                'name' => 'unlimited',
+                'pattern' => '^application-a-',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+            [
+                'name' => 'finite',
+                'pattern' => 'warehouse$',
+                'apply-to' => 'queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => 20],
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
+});
+
+test('shares one topic exchange while keeping application queue namespaces distinct', function (): void {
+    // --- Arrange ---
+    [$applicationA, $applicationAHttp] = rabbitMqTopology();
+    [$applicationB, $applicationBHttp] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $applicationA->planSync([rabbitMqSubscription()], 'application-a')->apply();
+    $applicationB->planSync([rabbitMqSubscription()], 'application-b')->apply();
+
+    // --- Assert ---
+    $applicationAHttp->assertSent(
+        static fn (Request $request): bool => $request->method() === 'PUT'
+            && str_ends_with($request->url(), '/api/exchanges/%2F/orders'),
+    );
+    $applicationAHttp->assertSent(
+        static fn (Request $request): bool => $request->method() === 'PUT'
+            && str_ends_with($request->url(), '/api/queues/%2F/application-a-warehouse'),
+    );
+    $applicationBHttp->assertNotSent(
+        static fn (Request $request): bool => $request->method() === 'PUT'
+            && str_ends_with($request->url(), '/api/exchanges/%2F/orders'),
+    );
+    $applicationBHttp->assertSent(
+        static fn (Request $request): bool => $request->method() === 'PUT'
+            && str_ends_with($request->url(), '/api/queues/%2F/application-b-warehouse'),
+    );
+    $applicationAHttp->assertSent(
+        static fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/api/bindings/%2F/e/orders/q/application-a-warehouse'),
+    );
+    $applicationBHttp->assertSent(
+        static fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/api/bindings/%2F/e/orders/q/application-b-warehouse'),
+    );
+});
+
+test('refuses to delete a missing topic', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology();
+
+    // --- Act ---
+    $action = fn () => $topology->deleteTopic('orders');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'does not exist');
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() === 'DELETE',
+    );
+});
+
+test('refuses to delete a topic with an incoming exchange binding', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET exchanges/%2F/orders/bindings/source' => [[], 200],
+        'GET exchanges/%2F/orders/bindings/destination' => [[
+            [
+                'source' => 'all-events',
+                'destination' => 'orders',
+                'destination_type' => 'exchange',
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->deleteTopic('orders');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'while it has bindings');
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() === 'DELETE',
+    );
+});

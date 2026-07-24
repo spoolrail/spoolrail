@@ -7,9 +7,17 @@ namespace Spoolrail\Spoolrail;
 use Closure;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
+use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\MissingRabbitMqDependencyException;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
 class SpoolrailManager
@@ -48,6 +56,10 @@ class SpoolrailManager
     {
         $name ??= $this->getDefaultConnection();
 
+        if (isset($this->connections[$name])) {
+            $this->connections[$name]->close();
+        }
+
         unset($this->connections[$name]);
     }
 
@@ -70,6 +82,35 @@ class SpoolrailManager
         return $name;
     }
 
+    /**
+     * @return list<string>
+     */
+    public function configuredConnectionNames(): array
+    {
+        $connections = $this->config->get('spoolrail.connections');
+
+        if (! is_array($connections)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_keys($connections), is_string(...)));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function potentiallyManagedConnectionNames(): array
+    {
+        return array_values(array_filter(
+            $this->configuredConnectionNames(),
+            function (string $name): bool {
+                $configuration = $this->config->get("spoolrail.connections.$name");
+
+                return is_array($configuration) && ($configuration['driver'] ?? null) !== 'array';
+            },
+        ));
+    }
+
     private function resolve(string $name): Connection
     {
         $config = $this->connectionConfig($name);
@@ -80,6 +121,7 @@ class SpoolrailManager
         } else {
             $instance = match ($driver) {
                 'array' => $this->createArrayDriver($name),
+                'rabbitmq' => $this->createRabbitMqDriver($name, $config),
                 default => throw InvalidConfigurationException::unsupportedDriver($driver),
             };
         }
@@ -125,6 +167,29 @@ class SpoolrailManager
             $name,
             $this->getDefaultConnection(),
             $this->app->make(SubscriptionRegistry::class),
+        );
+    }
+
+    /**
+     * @param  array<mixed>  $configuration
+     */
+    private function createRabbitMqDriver(string $name, array $configuration): RabbitMqDriver
+    {
+        if (! class_exists(AMQPConnectionConfig::class)) {
+            throw new MissingRabbitMqDependencyException;
+        }
+
+        $config = new RabbitMqConnectionConfig($name, $configuration);
+        $management = new RabbitMqManagementClient(
+            $config,
+            $this->app->make(HttpFactory::class),
+        );
+
+        return new RabbitMqDriver(
+            $config,
+            new RabbitMqConnectionFactory,
+            new RabbitMqTopology($config, $management),
+            $this->app->make(OwnershipPrefix::class),
         );
     }
 }

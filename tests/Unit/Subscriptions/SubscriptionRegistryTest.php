@@ -163,7 +163,7 @@ test('rejects non-concrete message handlers without reserving the subscription n
     'abstract class' => AbstractMessageHandler::class,
 ]);
 
-test('rejects blank subscription identifiers', function (string $topic, string $name, string $message): void {
+test('rejects non-portable subscription identifiers', function (string $topic, string $name, string $message): void {
     // --- Arrange ---
     $subscriptions = new SubscriptionRegistry;
 
@@ -180,6 +180,6 @@ test('rejects blank subscription identifiers', function (string $topic, string $
     expect($failure)->toBeInstanceOf(InvalidSubscriptionException::class);
     expect($failure?->getMessage())->toBe($message);
 })->with([
-    'topic' => ['   ', 'warehouse-orders', 'Subscription topic must not be empty.'],
-    'name' => ['orders', '   ', 'Subscription name must not be empty.'],
+    'blank topic' => ['   ', 'warehouse-orders', 'Subscription topic [   ] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.'],
+    'blank name' => ['orders', '   ', 'Subscription name [   ] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.'],
 ]);

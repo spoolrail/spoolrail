@@ -32,4 +32,9 @@ class InvalidConfigurationException extends InvalidArgumentException implements 
     {
         return new self("Spoolrail driver [$driver] is not supported.");
     }
+
+    public static function invalidOwnershipPrefix(): self
+    {
+        return new self('Spoolrail ownership prefix must begin with an ASCII letter and contain only ASCII letters, digits, hyphens, and underscores.');
+    }
 }

@@ -5,8 +5,10 @@ declare(strict_types=1);
 use Illuminate\Contracts\Foundation\Application;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\MissingRabbitMqDependencyException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Symfony\Component\Process\Process;
 
 test('creates each configured connection only when requested and caches it by name', function (): void {
     // --- Arrange ---
@@ -137,4 +139,20 @@ test('rejects an unsupported driver', function (): void {
     // --- Assert ---
     expect($failure)->toBeInstanceOf(InvalidConfigurationException::class);
     expect($failure?->getMessage())->toBe('Spoolrail driver [missing] is not supported.');
+});
+
+test('rejects the built-in RabbitMQ driver when php-amqplib is unavailable', function (): void {
+    // --- Act ---
+    $process = new Process([
+        PHP_BINARY,
+        __DIR__.'/../Fixtures/resolve-rabbitmq-without-php-amqplib.php',
+    ]);
+    $process->run();
+
+    // --- Assert ---
+    expect($process->getExitCode())->toBe(0);
+    expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'class' => MissingRabbitMqDependencyException::class,
+        'message' => 'The RabbitMQ driver requires php-amqplib/php-amqplib:^3.7.4. Install it in the application before selecting this driver.',
+    ]);
 });
