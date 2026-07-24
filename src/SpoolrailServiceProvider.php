@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail;
 
 use Illuminate\Support\ServiceProvider;
+use Override;
 use Spoolrail\Spoolrail\Console\ConsumeCommand;
+use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
+use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
+use Spoolrail\Spoolrail\Console\SyncCommand;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
 class SpoolrailServiceProvider extends ServiceProvider
 {
-    #[\Override]
+    #[Override]
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/spoolrail.php', 'spoolrail');
@@ -28,7 +32,12 @@ class SpoolrailServiceProvider extends ServiceProvider
         ], 'spoolrail-config');
 
         if ($this->app->runningInConsole()) {
-            $this->commands(ConsumeCommand::class);
+            $this->commands([
+                ConsumeCommand::class,
+                DeleteTopicCommand::class,
+                DeleteUndeclaredSubscriptionsCommand::class,
+                SyncCommand::class,
+            ]);
         }
 
         $routes = base_path('routes/subscriptions.php');

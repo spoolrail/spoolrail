@@ -9,6 +9,23 @@ composer install
 npm install
 ```
 
+## RabbitMQ
+
+RabbitMQ 4.3 is an internal development and testing dependency. Start the repository-managed broker and its Management HTTP API before running the test suite:
+
+```bash
+docker compose up -d --wait rabbitmq
+composer test
+```
+
+The default endpoints are `amqp://spoolrail:spoolrail@127.0.0.1:5672/spoolrail` and `http://127.0.0.1:15672`. If either host port is occupied, set `SPOOLRAIL_RABBITMQ_PORT` or `SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT` before starting Compose and supply the matching `SPOOLRAIL_TEST_AMQP_URL` or `SPOOLRAIL_TEST_MANAGEMENT_URL` when running tests.
+
+RabbitMQ scenarios are part of the ordinary Feature suite. `composer test` never starts, restarts, or stops Docker containers; it fails clearly rather than silently skipping those scenarios when the broker is unavailable. Stop and remove the service when it is no longer needed:
+
+```bash
+docker compose down --volumes
+```
+
 ## Git Hooks
 
 Install project hooks:
@@ -26,14 +43,14 @@ If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-de
 
 ## Commands
 
-| Command                  | Purpose                                            |
-| ------------------------ | -------------------------------------------------- |
-| `composer test`          | Run the test suite (`pest --compact`).             |
-| `composer format`        | Run Laravel Pint and Prettier formatting.          |
-| `composer analyse`       | Run static analysis (`phpstan`).                   |
-| `composer refactor`      | Apply Rector refactors.                            |
-| `composer coverage`      | Run tests with local coverage (`pest --coverage`). |
-| `composer coverage:herd` | Run coverage via Laravel Herd tooling.             |
+| Command                  | Purpose                                             |
+| ------------------------ | --------------------------------------------------- |
+| `composer test`          | Run the default suite, including RabbitMQ coverage. |
+| `composer format`        | Run Laravel Pint and Prettier formatting.           |
+| `composer analyse`       | Run static analysis (`phpstan`).                    |
+| `composer refactor`      | Apply Rector refactors.                             |
+| `composer coverage`      | Run tests with local coverage (`pest --coverage`).  |
+| `composer coverage:herd` | Run coverage via Laravel Herd tooling.              |
 
 ## Testing Lower Dependency Versions
 
@@ -43,6 +60,7 @@ To validate compatibility with Laravel 12 without editing `composer.json`:
 composer update -W \
     illuminate/console:^12.0 \
     illuminate/contracts:^12.0 \
+    illuminate/http:^12.0 \
     illuminate/queue:^12.0 \
     illuminate/support:^12.0 \
     orchestra/testbench:^10.0 \

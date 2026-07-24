@@ -10,6 +10,7 @@ use Rector\Set\ValueObject\SetList;
 use RectorLaravel\Rector\FuncCall\RemoveDumpDataDeadCodeRector;
 
 return RectorConfig::configure()
+    ->withImportNames()
     ->withPaths([
         __DIR__.'/src',
         __DIR__.'/tests',
@@ -21,6 +22,7 @@ return RectorConfig::configure()
         'ray',
     ])
     ->withSkip([
+        __DIR__.'/tests/Fixtures/application/bootstrap/cache',
         ReadOnlyPropertyRector::class,
         RemoveAlwaysTrueIfConditionRector::class,
         RemoveNullArgOnNullDefaultParamRector::class,

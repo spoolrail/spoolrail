@@ -7,6 +7,7 @@ namespace Spoolrail\Spoolrail\Subscriptions;
 use Closure;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
+use Spoolrail\Spoolrail\LogicalName;
 
 class Subscription
 {
@@ -68,8 +69,12 @@ class Subscription
 
     public function drainMessagesQueuedFor(string $subscription): self
     {
+        if (! LogicalName::isValid($subscription)) {
+            throw InvalidSubscriptionException::invalidName($subscription);
+        }
+
         ($this->registerQueuedMessageSubscription)(
-            $this->requireName($subscription, 'Queued message subscription name'),
+            $subscription,
         );
 
         return $this;

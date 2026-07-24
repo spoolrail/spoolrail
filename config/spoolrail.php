@@ -18,6 +18,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Receive-Side Ownership Prefix
+    |--------------------------------------------------------------------------
+    |
+    | Null derives the prefix from the application name and environment. An
+    | explicit prefix is validated as supplied and is never normalized.
+    |
+    */
+
+    'prefix' => env('SPOOLRAIL_PREFIX'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Spoolrail Connections
     |--------------------------------------------------------------------------
     |

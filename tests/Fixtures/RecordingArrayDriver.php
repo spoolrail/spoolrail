@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Tests\Fixtures;
 
 use Closure;
+use Override;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 
 class RecordingArrayDriver extends ArrayDriver
@@ -14,7 +15,7 @@ class RecordingArrayDriver extends ArrayDriver
     /**
      * @param  Closure(string): void  $handoff
      */
-    #[\Override]
+    #[Override]
     public function consume(string $subscription, Closure $handoff): void
     {
         $this->consumeCalls++;

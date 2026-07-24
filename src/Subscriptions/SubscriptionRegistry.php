@@ -7,6 +7,7 @@ namespace Spoolrail\Spoolrail\Subscriptions;
 use ReflectionClass;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
+use Spoolrail\Spoolrail\LogicalName;
 
 class SubscriptionRegistry
 {
@@ -21,12 +22,12 @@ class SubscriptionRegistry
      */
     public function subscribe(string $topic, string $name, string $handler): Subscription
     {
-        if (trim($topic) === '') {
-            throw InvalidSubscriptionException::emptyTopic();
+        if (! LogicalName::isValid($topic)) {
+            throw InvalidSubscriptionException::invalidTopic($topic);
         }
 
-        if (trim($name) === '') {
-            throw InvalidSubscriptionException::emptyName();
+        if (! LogicalName::isValid($name)) {
+            throw InvalidSubscriptionException::invalidName($name);
         }
 
         if (! is_a($handler, MessageHandler::class, true)) {
@@ -62,6 +63,14 @@ class SubscriptionRegistry
     public function getForQueuedMessage(string $name): Subscription
     {
         return $this->get($this->queuedMessageSubscriptions[$name] ?? $name);
+    }
+
+    /**
+     * @return list<Subscription>
+     */
+    public function all(): array
+    {
+        return array_values($this->subscriptions);
     }
 
     /**

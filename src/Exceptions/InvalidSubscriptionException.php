@@ -19,14 +19,18 @@ class InvalidSubscriptionException extends InvalidArgumentException implements S
         return new self("Subscription [$name] has not been registered.");
     }
 
-    public static function emptyTopic(): self
+    public static function invalidTopic(string $topic): self
     {
-        return new self('Subscription topic must not be empty.');
+        return new self(
+            "Subscription topic [$topic] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
+        );
     }
 
-    public static function emptyName(): self
+    public static function invalidName(string $name): self
     {
-        return new self('Subscription name must not be empty.');
+        return new self(
+            "Subscription name [$name] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
+        );
     }
 
     public static function invalidHandler(string $handler): self

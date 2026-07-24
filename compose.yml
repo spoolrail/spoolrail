@@ -1,0 +1,20 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: spoolrail
+      RABBITMQ_DEFAULT_PASS: spoolrail
+      RABBITMQ_DEFAULT_VHOST: spoolrail
+    ports:
+      - "127.0.0.1:${SPOOLRAIL_RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  rabbitmq-data:
