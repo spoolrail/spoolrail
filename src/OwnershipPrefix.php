@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail;
 
 use Illuminate\Contracts\Config\Repository;
-use Illuminate\Support\Str;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
 
 class OwnershipPrefix
@@ -18,23 +17,7 @@ class OwnershipPrefix
 
     public function value(): string
     {
-        $configured = $this->config->get('spoolrail.prefix');
-
-        if ($configured !== null) {
-            return $this->validate($configured);
-        }
-
-        $applicationName = $this->config->get('app.name');
-        $environmentName = $this->config->get('app.env');
-
-        if (! is_string($applicationName) || ! is_string($environmentName)) {
-            throw InvalidConfigurationException::invalidOwnershipPrefix();
-        }
-
-        $name = Str::slug($applicationName);
-        $environment = Str::slug($environmentName);
-
-        return $this->validate("$name-$environment");
+        return $this->validate($this->config->get('spoolrail.prefix'));
     }
 
     public function validate(mixed $prefix): string

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\RabbitMq;
 
+use Exception;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use PhpAmqpLib\Connection\AMQPConnectionFactory;
@@ -13,11 +14,18 @@ class RabbitMqConnectionFactory
 {
     public function create(RabbitMqConnectionConfig $connection): AbstractConnection
     {
-        $native = AMQPConnectionFactory::create($this->configuration($connection));
+        $hosts = $connection->hosts();
+        $lastHost = array_pop($hosts);
 
-        $this->verifySupportedBroker($native);
+        foreach ($hosts as $host) {
+            try {
+                return $this->connect($connection, $host);
+            } catch (Exception) {
+                // Try the next configured host while establishing the connection.
+            }
+        }
 
-        return $native;
+        return $this->connect($connection, $lastHost);
     }
 
     /**
@@ -41,14 +49,15 @@ class RabbitMqConnectionFactory
     /**
      * @internal
      */
-    public function configuration(RabbitMqConnectionConfig $connection): AMQPConnectionConfig
+    public function configuration(RabbitMqConnectionConfig $connection, string $host): AMQPConnectionConfig
     {
         $config = new AMQPConnectionConfig;
-        $config->setHost($connection->host());
+        $config->setHost($host);
         $config->setPort($connection->port());
         $config->setUser($connection->username());
         $config->setPassword($connection->password());
         $config->setVhost($connection->virtualHost());
+        $config->setConnectionTimeout($connection->connectionTimeout());
 
         $heartbeat = $connection->heartbeat();
 
@@ -69,5 +78,14 @@ class RabbitMqConnectionFactory
         }
 
         return $config;
+    }
+
+    private function connect(RabbitMqConnectionConfig $connection, string $host): AbstractConnection
+    {
+        $native = AMQPConnectionFactory::create($this->configuration($connection, $host));
+
+        $this->verifySupportedBroker($native);
+
+        return $native;
     }
 }

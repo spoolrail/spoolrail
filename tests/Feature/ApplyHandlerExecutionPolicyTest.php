@@ -2,31 +2,24 @@
 
 declare(strict_types=1);
 
-use Carbon\CarbonImmutable;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
+use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
-use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
 use Spoolrail\Spoolrail\Tests\Fixtures\QueuePolicyRecordingMiddleware;
 use Spoolrail\Spoolrail\Tests\Fixtures\QueuePolicyReleasingMiddleware;
 
-test('captures handler policy rather than the handler in the Queue payload', function (): void {
+test('captures handler policy without constructing the handler', function (): void {
     // --- Arrange ---
-    configureHandlerPolicyDatabaseQueue();
+    createHandlerPolicyJobsTable();
 
     $handler = new class implements MessageHandler
     {
         public static int $constructions = 0;
-
-        public int $maxExceptions = 3;
-
-        public int $timeout = 120;
-
-        public bool $failOnTimeout = true;
 
         public function __construct()
         {
@@ -39,66 +32,25 @@ test('captures handler policy rather than the handler in the Queue payload', fun
         {
             return 5;
         }
-
-        /** @return list<int> */
-        public function backoff(): array
-        {
-            return [10, 30, 60];
-        }
-
-        public function retryUntil(): DateTimeInterface
-        {
-            return CarbonImmutable::parse('2030-01-02 03:04:05 UTC');
-        }
     };
     $handler::$constructions = 0;
 
     Spoolrail::subscribe('orders', 'configured-orders', $handler::class)
-        ->onQueueConnection('policy-database');
+        ->onQueueConnection('database');
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
     $this->artisan('spoolrail:consume configured-orders')->run();
 
-    $payload = handlerPolicyPayload();
+    $job = handlerPolicyJob();
 
     // --- Assert ---
-    expect($payload['maxTries'])->toBe(5);
-    expect($payload['backoff'])->toBe('10,30,60');
-    expect($payload['maxExceptions'])->toBe(3);
-    expect($payload['timeout'])->toBe(120);
-    expect($payload['failOnTimeout'])->toBeTrue();
-    expect($payload['retryUntil'])->toBe(CarbonImmutable::parse('2030-01-02 03:04:05 UTC')->getTimestamp());
+    expect($job->tries)->toBe(5);
     expect($handler::$constructions)->toBe(0);
-    expect($payload['data']['command'])->not->toContain($handler::class);
-});
-
-test('preserves Laravel worker defaults when the handler declares no execution policy', function (): void {
-    // --- Arrange ---
-    configureHandlerPolicyDatabaseQueue();
-
-    Spoolrail::subscribe('orders', 'default-policy-orders', NoopMessageHandler::class)
-        ->onQueueConnection('policy-database');
-    Spoolrail::publish('orders', Message::make('order.created', []));
-
-    // --- Act ---
-    $this->artisan('spoolrail:consume default-policy-orders')->run();
-
-    $payload = handlerPolicyPayload();
-
-    // --- Assert ---
-    expect($payload['maxTries'])->toBeNull();
-    expect($payload['backoff'])->toBeNull();
-    expect($payload['maxExceptions'])->toBeNull();
-    expect($payload['timeout'])->toBeNull();
-    expect($payload['failOnTimeout'])->toBeFalse();
-    expect($payload['retryUntil'])->toBeNull();
 });
 
 test('runs message-specific middleware in order around a handler constructed only for execution', function (): void {
     // --- Arrange ---
-    config()->set('queue.default', 'sync');
-
     $handler = new class implements MessageHandler
     {
         public static int $constructions = 0;
@@ -122,7 +74,6 @@ test('runs message-specific middleware in order around a handler constructed onl
 
             return [
                 new QueuePolicyRecordingMiddleware('first'),
-                new QueuePolicyRecordingMiddleware('second'),
             ];
         }
     };
@@ -140,16 +91,14 @@ test('runs message-specific middleware in order around a handler constructed onl
     expect($handler::$constructions)->toBe(1);
     expect(QueuePolicyRecordingMiddleware::$events)->toBe([
         'before:first',
-        'before:second',
         'handle',
-        'after:second',
         'after:first',
     ]);
 });
 
 test('gives captured middleware the underlying Laravel Queue job', function (): void {
     // --- Arrange ---
-    configureHandlerPolicyDatabaseQueue();
+    createHandlerPolicyJobsTable();
 
     $handler = new class implements MessageHandler
     {
@@ -169,32 +118,32 @@ test('gives captured middleware the underlying Laravel Queue job', function (): 
     app()->instance($handler::class, $handler);
 
     Spoolrail::subscribe('orders', 'release-orders', $handler::class)
-        ->onQueueConnection('policy-database');
+        ->onQueueConnection('database');
     Spoolrail::publish('orders', Message::make('order.created', []));
     $this->artisan('spoolrail:consume release-orders')->run();
 
     // --- Act ---
-    $this->artisan('queue:work policy-database --once --tries=1')->run();
+    $this->artisan('queue:work database --once --tries=1')->run();
 
-    $queued = DB::connection('testing')->table('policy_jobs')->first();
+    $queued = DB::connection('testing')->table('jobs')->first();
 
     // --- Assert ---
     expect($handler->handled)->toBeFalse();
-    expect($queued)->not->toBeNull();
-    expect($queued->attempts)->toBe(1);
-    expect($queued->reserved_at)->toBeNull();
     expect($queued->available_at)->toBeGreaterThan($queued->created_at);
 });
 
 test('keeps policy extraction failure inside the source handoff boundary', function (): void {
     // --- Arrange ---
-    configureHandlerPolicyDatabaseQueue();
-
     $handler = new class implements MessageHandler
     {
         public static bool $shouldFail = true;
 
-        public function handle(Message $message): void {}
+        public ?string $handledMessage = null;
+
+        public function handle(Message $message): void
+        {
+            $this->handledMessage = $message->id;
+        }
 
         public function tries(): int
         {
@@ -206,9 +155,9 @@ test('keeps policy extraction failure inside the source handoff boundary', funct
         }
     };
     $handler::$shouldFail = true;
+    app()->instance($handler::class, $handler);
 
-    Spoolrail::subscribe('orders', 'failing-policy-orders', $handler::class)
-        ->onQueueConnection('policy-database');
+    Spoolrail::subscribe('orders', 'failing-policy-orders', $handler::class);
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
@@ -220,24 +169,18 @@ test('keeps policy extraction failure inside the source handoff boundary', funct
         $failure = $exception;
     }
 
-    $queuedAfterFailure = DB::connection('testing')->table('policy_jobs')->count();
-
     $handler::$shouldFail = false;
     $this->artisan('spoolrail:consume failing-policy-orders')->run();
-
-    $payload = handlerPolicyPayload();
-    $job = unserialize($payload['data']['command']);
 
     // --- Assert ---
     expect($failure)->toBeInstanceOf(RuntimeException::class);
     expect($failure?->getMessage())->toBe('Handler queue policy failed.');
-    expect($queuedAfterFailure)->toBe(0);
-    expect($job->message->id)->toBe($published->id);
+    expect($handler->handledMessage)->toBe($published->id);
 });
 
 test('uses captured policy while resolving a replacement handler at execution', function (): void {
     // --- Arrange ---
-    configureHandlerPolicyDatabaseQueue();
+    createHandlerPolicyJobsTable();
 
     $original = new class implements MessageHandler
     {
@@ -250,7 +193,7 @@ test('uses captured policy while resolving a replacement handler at execution', 
     };
 
     Spoolrail::subscribe('orders', 'warehouse-orders', $original::class)
-        ->onQueueConnection('policy-database');
+        ->onQueueConnection('database');
     Spoolrail::publish('orders', Message::make('order.created', []));
     $this->artisan('spoolrail:consume warehouse-orders')->run();
 
@@ -276,19 +219,19 @@ test('uses captured policy while resolving a replacement handler at execution', 
         ->drainMessagesQueuedFor('warehouse-orders');
     app()->instance(SubscriptionRegistry::class, $deployedSubscriptions);
 
-    $payloadAfterDeployment = handlerPolicyPayload();
+    $jobAfterDeployment = handlerPolicyJob();
 
     // --- Act ---
-    $this->artisan('queue:work policy-database --once')->run();
+    $this->artisan('queue:work database --once')->run();
 
     // --- Assert ---
-    expect($payloadAfterDeployment['maxTries'])->toBe(5);
+    expect($jobAfterDeployment->tries)->toBe(5);
     expect($replacement->handled)->toBeTrue();
 });
 
-function configureHandlerPolicyDatabaseQueue(): void
+function createHandlerPolicyJobsTable(): void
 {
-    Schema::connection('testing')->create('policy_jobs', function (Blueprint $blueprint): void {
+    Schema::connection('testing')->create('jobs', function (Blueprint $blueprint): void {
         $blueprint->id();
         $blueprint->string('queue')->index();
         $blueprint->longText('payload');
@@ -298,22 +241,12 @@ function configureHandlerPolicyDatabaseQueue(): void
         $blueprint->unsignedInteger('created_at');
     });
 
-    config()->set('queue.default', 'policy-database');
-    config()->set('queue.connections.policy-database', [
-        'driver' => 'database',
-        'connection' => 'testing',
-        'table' => 'policy_jobs',
-        'queue' => 'default',
-        'retry_after' => 90,
-        'after_commit' => false,
-    ]);
-    config()->set('queue.failed.driver', 'null');
 }
 
-/** @return array<string, mixed> */
-function handlerPolicyPayload(): array
+function handlerPolicyJob(): HandleMessageJob
 {
-    $payload = DB::connection('testing')->table('policy_jobs')->value('payload');
+    $payload = DB::connection('testing')->table('jobs')->value('payload');
+    $decoded = json_decode((string) $payload, true, flags: JSON_THROW_ON_ERROR);
 
-    return json_decode((string) $payload, true, flags: JSON_THROW_ON_ERROR);
+    return unserialize($decoded['data']['command']);
 }

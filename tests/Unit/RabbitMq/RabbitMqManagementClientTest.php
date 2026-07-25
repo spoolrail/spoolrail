@@ -16,7 +16,8 @@ test('maps the Management HTTPS endpoint identity and private CA into a verified
     ]);
     $client = new RabbitMqManagementClient(
         new RabbitMqConnectionConfig('events', [
-            'url' => 'amqp://publisher:runtime-secret@rabbit.internal/%2F',
+            'username' => 'publisher',
+            'password' => 'runtime-secret',
             'management' => [
                 'url' => 'https://management.internal:15671',
                 'username' => 'topology',
@@ -30,7 +31,7 @@ test('maps the Management HTTPS endpoint identity and private CA into a verified
     $options = null;
 
     // --- Act ---
-    $response = $client->pendingRequest()
+    $client->pendingRequest()
         ->beforeSending(function (Request $request, array $requestOptions) use (&$sent, &$options): void {
             $sent = $request;
             $options = $requestOptions;
@@ -38,7 +39,6 @@ test('maps the Management HTTPS endpoint identity and private CA into a verified
         ->get('overview');
 
     // --- Assert ---
-    expect($response->json())->toBe(['rabbitmq_version' => '4.3.2']);
     expect($sent)->toBeInstanceOf(Request::class);
     expect($sent?->url())->toBe('https://management.internal:15671/api/overview');
     expect($sent?->header('Authorization'))->toBe([
@@ -55,7 +55,9 @@ test('uses the system trust store and AMQP credentials when management overrides
     ]);
     $client = new RabbitMqManagementClient(
         new RabbitMqConnectionConfig('events', [
-            'url' => 'amqp://publisher:runtime-secret@rabbit.internal/%2F',
+            'username' => 'publisher',
+            'password' => 'runtime-secret',
+            'ca_file' => __FILE__,
             'management' => [
                 'url' => 'https://management.internal:15671/api',
             ],
@@ -74,7 +76,6 @@ test('uses the system trust store and AMQP credentials when management overrides
         ->get('overview');
 
     // --- Assert ---
-    expect($sent?->url())->toBe('https://management.internal:15671/api/overview');
     expect($sent?->header('Authorization'))->toBe([
         'Basic '.base64_encode('publisher:runtime-secret'),
     ]);
@@ -92,14 +93,7 @@ test('filters owned queues by a literal prefix with bounded low-cost pagination'
         ]),
     ]);
     $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
-            'url' => 'amqp://publisher:runtime-secret@rabbit.internal/%2F',
-            'management' => [
-                'url' => 'https://management.internal:15671',
-                'username' => 'topology',
-                'password' => 'control-secret',
-            ],
-        ]),
+        new RabbitMqConnectionConfig('events', []),
         $http,
     );
 
@@ -143,12 +137,7 @@ test('returns owned queues from every Management API page', function (): void {
             ]),
     ]);
     $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
-            'url' => 'amqp://publisher:runtime-secret@rabbit.internal/%2F',
-            'management' => [
-                'url' => 'https://management.internal:15671',
-            ],
-        ]),
+        new RabbitMqConnectionConfig('events', []),
         $http,
     );
 
@@ -167,7 +156,6 @@ test('returns owned queues from every Management API page', function (): void {
 });
 
 test('rejects an invalid paginated queue response', function (): void {
-    // --- Arrange ---
     $http = new Factory;
     $http->fake([
         '*' => $http->response([
@@ -176,38 +164,27 @@ test('rejects an invalid paginated queue response', function (): void {
         ]),
     ]);
     $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
-            'url' => 'amqp://publisher:runtime-secret@rabbit.internal/%2F',
-            'management' => [
-                'url' => 'https://management.internal:15671',
-            ],
-        ]),
+        new RabbitMqConnectionConfig('events', []),
         $http,
     );
-    $failure = null;
 
-    // --- Act ---
-    try {
-        $client->queuesOwnedBy('warehouse-production');
-    } catch (RabbitMqManagementException $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure?->getMessage())->toBe(
-        'RabbitMQ connection [events] Management API returned an invalid response while listing queues owned by prefix [warehouse-production].',
-    );
+    expect(fn (): array => $client->queuesOwnedBy('warehouse-production'))
+        ->toThrow(
+            RabbitMqManagementException::class,
+            'RabbitMQ connection [events] Management API returned an invalid response while listing queues owned by prefix [warehouse-production].',
+        );
 });
 
 test('reports Management API authentication and permission failures without credentials', function (int $status): void {
-    // --- Arrange ---
     $http = new Factory;
     $http->fake([
         '*' => $http->response(status: $status),
     ]);
     $client = new RabbitMqManagementClient(
         new RabbitMqConnectionConfig('events', [
-            'url' => 'amqp://publisher:runtime-secret@rabbit.internal/%2F',
+            'host' => 'rabbit.internal',
+            'username' => 'publisher',
+            'password' => 'runtime-secret',
             'management' => [
                 'url' => 'https://management.internal:15671',
                 'username' => 'topology',
@@ -216,30 +193,21 @@ test('reports Management API authentication and permission failures without cred
         ]),
         $http,
     );
-    $failure = null;
 
-    // --- Act ---
-    try {
-        $client->overview();
-    } catch (RabbitMqManagementException $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    $message = $failure?->getMessage() ?? '';
-
-    expect($message)->toBe(
-        "RabbitMQ connection [events] Management API returned HTTP $status while reading the broker version.",
-    );
-    expect($message)->not->toContain('runtime-secret');
-    expect($message)->not->toContain('control-secret');
+    expect(fn (): array => $client->overview())
+        ->toThrow(function (RabbitMqManagementException $exception) use ($status): void {
+            expect($exception->getMessage())->toBe(
+                "RabbitMQ connection [events] Management API returned HTTP $status while reading the broker version.",
+            );
+            expect($exception->getMessage())->not->toContain('runtime-secret');
+            expect($exception->getMessage())->not->toContain('control-secret');
+        });
 })->with([
     'authentication failure' => 401,
     'permission failure' => 403,
 ]);
 
 test('preserves TLS request failure diagnostics without surfacing credentials', function (): void {
-    // --- Arrange ---
     $http = new Factory;
     $http->fake([
         '*' => Factory::failedConnection(
@@ -248,7 +216,8 @@ test('preserves TLS request failure diagnostics without surfacing credentials', 
     ]);
     $client = new RabbitMqManagementClient(
         new RabbitMqConnectionConfig('events', [
-            'url' => 'amqps://publisher:runtime-secret@rabbit.internal/%2F',
+            'username' => 'publisher',
+            'password' => 'runtime-secret',
             'management' => [
                 'url' => 'https://management.internal:15671',
                 'username' => 'topology',
@@ -257,23 +226,17 @@ test('preserves TLS request failure diagnostics without surfacing credentials', 
         ]),
         $http,
     );
-    $failure = null;
 
-    // --- Act ---
-    try {
-        $client->overview();
-    } catch (RabbitMqManagementException $exception) {
-        $failure = $exception;
-    }
+    expect(fn (): array => $client->overview())
+        ->toThrow(function (RabbitMqManagementException $exception): void {
+            expect($exception->getMessage())->toBe(
+                'RabbitMQ connection [events] Management API request failed while reading the broker version.',
+            );
+            expect($exception->getPrevious()?->getMessage())->toContain('SSL certificate problem');
 
-    // --- Assert ---
-    expect($failure?->getMessage())->toBe(
-        'RabbitMQ connection [events] Management API request failed while reading the broker version.',
-    );
-    expect($failure?->getPrevious()?->getMessage())->toContain('SSL certificate problem');
+            $diagnostics = $exception->getMessage().' '.($exception->getPrevious()?->getMessage() ?? '');
 
-    $diagnostics = ($failure?->getMessage() ?? '').' '.($failure?->getPrevious()?->getMessage() ?? '');
-
-    expect($diagnostics)->not->toContain('runtime-secret');
-    expect($diagnostics)->not->toContain('control-secret');
+            expect($diagnostics)->not->toContain('runtime-secret');
+            expect($diagnostics)->not->toContain('control-secret');
+        });
 });

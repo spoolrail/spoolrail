@@ -25,4 +25,9 @@
             <directory suffix=".php">./src</directory>
         </include>
     </source>
+    <php>
+        <env name="RABBITMQ_USERNAME" value="spoolrail"/>
+        <env name="RABBITMQ_PASSWORD" value="spoolrail"/>
+        <env name="RABBITMQ_VHOST" value="spoolrail"/>
+    </php>
 </phpunit>

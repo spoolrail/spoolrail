@@ -11,13 +11,14 @@
 - Inline single-use locals when the resulting expression remains clear.
 - Prefer string interpolation over `sprintf()` or `.` concatenation. Use concatenation for multi-line or complex strings when it improves readability.
 - Use `$var` instead of `{$var}` in interpolated strings unless required for disambiguation.
-- Access configuration where it is interpreted, with explicit defaults; avoid wrappers that only relay values.
 
-## Configuration Files
+## Configuration
 
-- Use environment variables only for deployment-specific values. Provide defaults only when safe and meaningful.
 - In multi-section configuration files, use blank lines inside the outer array and between top-level groups or multi-line sibling configurations.
 - Use Laravel-style section comments when a top-level group needs a heading or explanation; document only behavior or constraints not evident from its keys and defaults.
+- Use inline `env()` calls for common deployment-specific values, providing defaults when safe and meaningful. Leave uncommon opt-in values at literal defaults so applications choose how to source them.
+- Access configuration where it is interpreted, with explicit defaults; avoid wrappers that only relay values. For complex configuration blocks, follow how analogous components in the Laravel framework and its first-party packages read and interpret their configuration.
+- Treat configuration as trusted application input. Do not add defensive validation merely to fail earlier or produce friendlier errors.
 
 ## Method Complexity
 

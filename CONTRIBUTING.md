@@ -18,7 +18,7 @@ docker compose up -d --wait rabbitmq
 composer test
 ```
 
-The default endpoints are `amqp://spoolrail:spoolrail@127.0.0.1:5672/spoolrail` and `http://127.0.0.1:15672`. If either host port is occupied, set `SPOOLRAIL_RABBITMQ_PORT` or `SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT` before starting Compose and supply the matching `SPOOLRAIL_TEST_AMQP_URL` or `SPOOLRAIL_TEST_MANAGEMENT_URL` when running tests.
+The default endpoints are `amqp://spoolrail:spoolrail@127.0.0.1:5672/spoolrail` and `http://127.0.0.1:15672`. The test defaults live in `phpunit.xml.dist`. If either host port is occupied, set `SPOOLRAIL_RABBITMQ_PORT` or `SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT` before starting Compose and supply the matching `RABBITMQ_PORT` or `RABBITMQ_MANAGEMENT_URL` when running tests.
 
 RabbitMQ scenarios are part of the ordinary Feature suite. `composer test` never starts, restarts, or stops Docker containers; it fails clearly rather than silently skipping those scenarios when the broker is unavailable. Stop and remove the service when it is no longer needed:
 

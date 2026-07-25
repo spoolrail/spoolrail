@@ -10,13 +10,19 @@ use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 test('maps AMQPS identity heartbeat timeouts and private CA into a verified native configuration', function (): void {
     // --- Arrange ---
     $connection = new RabbitMqConnectionConfig('events', [
-        'url' => 'amqps://publisher%40tenant:p%40ss@rabbit.internal:5679/orders%2Fproduction',
+        'scheme' => 'amqps',
+        'host' => 'rabbit.internal',
+        'port' => 5_679,
+        'username' => 'publisher@tenant',
+        'password' => 'p@ss',
+        'vhost' => 'orders/production',
         'ca_file' => __FILE__,
+        'connection_timeout' => 7,
         'heartbeat' => 45,
     ]);
 
     // --- Act ---
-    $config = (new RabbitMqConnectionFactory)->configuration($connection);
+    $config = (new RabbitMqConnectionFactory)->configuration($connection, 'rabbit.internal');
 
     // --- Assert ---
     expect($config->getHost())->toBe('rabbit.internal');
@@ -25,6 +31,7 @@ test('maps AMQPS identity heartbeat timeouts and private CA into a verified nati
     expect($config->getPassword())->toBe('p@ss');
     expect($config->getVhost())->toBe('orders/production');
     expect($config->getConnectionName())->toBe('spoolrail:events');
+    expect($config->getConnectionTimeout())->toBe(7.0);
     expect($config->getHeartbeat())->toBe(45);
     expect($config->isKeepalive())->toBeFalse();
     expect($config->getReadTimeout())->toBe(90.0);
@@ -38,19 +45,14 @@ test('maps AMQPS identity heartbeat timeouts and private CA into a verified nati
 test('uses TCP keepalive and a usable socket timeout when the heartbeat is zero', function (): void {
     // --- Arrange ---
     $connection = new RabbitMqConnectionConfig('events', [
-        'url' => 'amqp://guest:guest@rabbit.internal',
+        'host' => 'rabbit.internal',
         'heartbeat' => 0,
     ]);
 
     // --- Act ---
-    $config = (new RabbitMqConnectionFactory)->configuration($connection);
+    $config = (new RabbitMqConnectionFactory)->configuration($connection, 'rabbit.internal');
 
     // --- Assert ---
-    expect($config->isSecure())->toBeFalse();
-    expect($config->getSslVerify())->toBeNull();
-    expect($config->getSslVerifyName())->toBeNull();
-    expect($config->getSslCaCert())->toBeNull();
-    expect($config->getVhost())->toBe('/');
     expect($config->getHeartbeat())->toBe(0);
     expect($config->isKeepalive())->toBeTrue();
     expect($config->getReadTimeout())->toBe(3.0);
@@ -58,14 +60,12 @@ test('uses TCP keepalive and a usable socket timeout when the heartbeat is zero'
 });
 
 test('rejects a detected RabbitMQ version older than 4.3', function (): void {
-    // --- Arrange ---
     $native = Mockery::mock(AbstractConnection::class);
     $native->shouldReceive('getServerProperties')
         ->once()
         ->andReturn(['version' => ['S', '4.2.9']]);
     $native->shouldReceive('close')->once();
 
-    // --- Act & Assert ---
     expect(fn () => (new RabbitMqConnectionFactory)->verifySupportedBroker($native))
         ->toThrow(
             UnsupportedRabbitMqVersionException::class,

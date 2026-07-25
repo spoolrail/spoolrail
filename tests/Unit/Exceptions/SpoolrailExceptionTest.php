@@ -10,16 +10,8 @@ use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Exceptions\SpoolrailException;
 
 test('keeps package exceptions within package and caller-relevant SPL catch boundaries', function (string $exception, string $splException): void {
-    // --- Arrange ---
-    $packageException = SpoolrailException::class;
-
-    // --- Act ---
-    $matchesPackageBoundary = is_a($exception, $packageException, true);
-    $matchesSplBoundary = is_a($exception, $splException, true);
-
-    // --- Assert ---
-    expect($matchesPackageBoundary)->toBeTrue();
-    expect($matchesSplBoundary)->toBeTrue();
+    expect(is_a($exception, SpoolrailException::class, true))->toBeTrue();
+    expect(is_a($exception, $splException, true))->toBeTrue();
 })->with([
     'invalid configuration' => [InvalidConfigurationException::class, InvalidArgumentException::class],
     'invalid message' => [InvalidMessageException::class, InvalidArgumentException::class],

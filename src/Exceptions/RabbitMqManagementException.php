@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Exceptions;
 
 use RuntimeException;
-use Throwable;
 
 class RabbitMqManagementException extends RuntimeException implements SpoolrailException
 {
     public static function requestFailed(
         string $connection,
         string $operation,
-        Throwable $previous,
+        string $failure,
     ): self {
         return new self(
             "RabbitMQ connection [$connection] Management API request failed while $operation.",
-            previous: $previous,
+            previous: new RuntimeException($failure),
         );
     }
 

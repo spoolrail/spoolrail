@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Config\Repository;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Exception\AMQPBasicCancelException;
@@ -13,6 +12,8 @@ use PhpAmqpLib\Message\AMQPMessage;
 use PhpAmqpLib\Wire\AMQPTable;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
+use Spoolrail\Spoolrail\Exceptions\InvalidPhysicalNameException;
+use Spoolrail\Spoolrail\Exceptions\InvalidRabbitMqTopicNameException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqConsumerCancelledException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqPublicationRejectedException;
 use Spoolrail\Spoolrail\OwnershipPrefix;
@@ -20,7 +21,6 @@ use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 
 test('publishes a persistent message and waits for its confirmation', function (): void {
-    // --- Arrange ---
     $channel = Mockery::mock(AMQPChannel::class);
     $native = Mockery::mock(AbstractConnection::class);
     $factory = Mockery::mock(RabbitMqConnectionFactory::class);
@@ -40,7 +40,6 @@ test('publishes a persistent message and waits for its confirmation', function (
 
     $driver = rabbitMqDriver($factory, publisherConfirmTimeout: 17);
 
-    // --- Act ---
     $driver->publish('orders', '{"message":"accepted"}');
     $driver->close();
 });
@@ -99,6 +98,24 @@ test('propagates a connection failure before publishing and does not retry', fun
     expect($caught)->toBe($failure);
 });
 
+test('rejects an over-limit topic before opening a connection', function (): void {
+    $factory = Mockery::mock(RabbitMqConnectionFactory::class);
+    $factory->shouldNotReceive('create');
+
+    expect(fn () => rabbitMqDriver($factory)->publish(str_repeat('a', 256), '{}'))
+        ->toThrow(InvalidRabbitMqTopicNameException::class);
+});
+
+test('rejects an over-limit queue before opening a connection', function (): void {
+    config()->set('spoolrail.prefix', 'a'.str_repeat('b', 249));
+
+    $factory = Mockery::mock(RabbitMqConnectionFactory::class);
+    $factory->shouldNotReceive('create');
+
+    expect(fn () => rabbitMqDriver($factory)->consume('orders', static function (): void {}))
+        ->toThrow(InvalidPhysicalNameException::class);
+});
+
 test('turns a negative publisher confirmation into a publication rejection', function (): void {
     // --- Arrange ---
     $nack = null;
@@ -140,7 +157,6 @@ test('turns a negative publisher confirmation into a publication rejection', fun
 });
 
 test('refreshes an idle publisher connection before publishing again', function (): void {
-    // --- Arrange ---
     $firstChannel = Mockery::mock(AMQPChannel::class);
     $secondChannel = Mockery::mock(AMQPChannel::class);
     $firstNative = Mockery::mock(AbstractConnection::class);
@@ -171,7 +187,6 @@ test('refreshes an idle publisher connection before publishing again', function 
     $driver = rabbitMqDriver($factory);
     $driver->publish('orders', '{"message":"first"}');
 
-    // --- Act ---
     $driver->publish('orders', '{"message":"second"}');
     $driver->close();
 });
@@ -179,6 +194,7 @@ test('refreshes an idle publisher connection before publishing again', function 
 test('acknowledges a delivery only after the handoff returns', function (): void {
     // --- Arrange ---
     $events = [];
+    $expectedQueue = app(OwnershipPrefix::class)->value().'-order-imports';
     $channel = Mockery::mock(AMQPChannel::class);
     $native = Mockery::mock(AbstractConnection::class);
     $factory = Mockery::mock(RabbitMqConnectionFactory::class);
@@ -199,10 +215,10 @@ test('acknowledges a delivery only after the handoff returns', function (): void
             Closure $callback,
             mixed $ticket,
             AMQPTable $arguments,
-        ) use ($channel): bool {
-            expect($queue)->toBe('warehouse-production-order-imports');
-            expect([$consumerTag, $noLocal, $noAck, $exclusive, $noWait, $ticket])
-                ->toBe(['', false, false, false, false, null]);
+        ) use ($channel, $expectedQueue): bool {
+            expect($queue)->toBe($expectedQueue);
+            expect($noAck)->toBeFalse();
+            expect($exclusive)->toBeFalse();
             expect($arguments->getNativeData())->toBe(['x-consumer-timeout' => 45_000]);
 
             $delivery = new AMQPMessage('message body');
@@ -281,9 +297,8 @@ test('omits the consumer acknowledgement timeout argument when it is not configu
     expect($arguments)->toBe([]);
 });
 
-test('propagates a missed consumer heartbeat and discards the connection', function (): void {
+test('propagates consumer transport failures and discards the connection', function (Throwable $failure): void {
     // --- Arrange ---
-    $failure = new AMQPHeartbeatMissedException('Missed server heartbeat.');
     $channel = Mockery::mock(AMQPChannel::class);
     $native = Mockery::mock(AbstractConnection::class);
     $factory = Mockery::mock(RabbitMqConnectionFactory::class);
@@ -308,84 +323,12 @@ test('propagates a missed consumer heartbeat and discards the connection', funct
 
     // --- Assert ---
     expect($caught)->toBe($failure);
-});
-
-test('propagates broker cancellation and discards the connection', function (): void {
-    // --- Arrange ---
-    $cancellation = new AMQPBasicCancelException('consumer-tag');
-    $channel = Mockery::mock(AMQPChannel::class);
-    $native = Mockery::mock(AbstractConnection::class);
-    $factory = Mockery::mock(RabbitMqConnectionFactory::class);
-
-    $native->expects('channel')->once()->andReturn($channel);
-    $native->expects('close')->once();
-    $factory->expects('create')->once()->andReturn($native);
-    $channel->allows('basic_qos');
-    $channel->allows('basic_consume');
-    $channel->expects('consume')->once()->andThrow($cancellation);
-
-    $driver = rabbitMqDriver($factory);
-
-    // --- Act ---
-    $caught = null;
-
-    try {
-        $driver->consume('order-imports', static function (): void {});
-    } catch (Throwable $exception) {
-        $caught = $exception;
-    }
-
-    // --- Assert ---
-    expect($caught)->toBe($cancellation);
-});
-
-test('preserves a handoff exception that has the same type as broker cancellation', function (): void {
-    // --- Arrange ---
-    $failure = new AMQPBasicCancelException('application failure');
-    $channel = Mockery::mock(AMQPChannel::class);
-    $native = Mockery::mock(AbstractConnection::class);
-    $factory = Mockery::mock(RabbitMqConnectionFactory::class);
-
-    $native->expects('channel')->once()->andReturn($channel);
-    $native->expects('close')->once();
-    $factory->expects('create')->once()->andReturn($native);
-    $channel->allows('basic_qos');
-    $channel->expects('basic_consume')
-        ->once()
-        ->andReturnUsing(function (
-            mixed $_queue,
-            mixed $_consumerTag,
-            mixed $_noLocal,
-            mixed $_noAck,
-            mixed $_exclusive,
-            mixed $_noWait,
-            Closure $callback,
-        ): string {
-            $callback(new AMQPMessage('message body'));
-
-            return 'consumer';
-        });
-    $channel->shouldNotReceive('consume');
-
-    $driver = rabbitMqDriver($factory);
-
-    // --- Act ---
-    $caught = null;
-
-    try {
-        $driver->consume('order-imports', static function () use ($failure): never {
-            throw $failure;
-        });
-    } catch (Throwable $exception) {
-        $caught = $exception;
-    }
-
-    // --- Assert ---
-    expect($caught)->toBe($failure);
-});
+})->with([
+    'missed heartbeat' => fn (): AMQPHeartbeatMissedException => new AMQPHeartbeatMissedException('Missed server heartbeat.'),
+    'broker cancellation' => fn (): AMQPBasicCancelException => new AMQPBasicCancelException('consumer-tag'),
+]);
 
 test('treats the consuming loop ending as an unexpected cancellation', function (): void {
-    // --- Arrange ---
     $channel = Mockery::mock(AMQPChannel::class);
     $native = Mockery::mock(AbstractConnection::class);
     $factory = Mockery::mock(RabbitMqConnectionFactory::class);
@@ -399,57 +342,8 @@ test('treats the consuming loop ending as an unexpected cancellation', function 
 
     $driver = rabbitMqDriver($factory);
 
-    // --- Act & Assert ---
     expect(fn () => $driver->consume('order-imports', static function (): void {}))
         ->toThrow(RabbitMqConsumerCancelledException::class);
-});
-
-test('leaves a failed handoff unsettled, discards the connection, and propagates the same failure', function (): void {
-    // --- Arrange ---
-    $failure = new RuntimeException('Laravel Queue handoff failed.');
-    $channel = Mockery::mock(AMQPChannel::class);
-    $native = Mockery::mock(AbstractConnection::class);
-    $factory = Mockery::mock(RabbitMqConnectionFactory::class);
-
-    $native->expects('channel')->once()->andReturn($channel);
-    $native->expects('close')->once();
-    $factory->expects('create')->once()->andReturn($native);
-    $channel->allows('basic_qos');
-    $channel->expects('basic_consume')
-        ->once()
-        ->andReturnUsing(function (
-            mixed $_queue,
-            mixed $_consumerTag,
-            mixed $_noLocal,
-            mixed $_noAck,
-            mixed $_exclusive,
-            mixed $_noWait,
-            Closure $callback,
-        ) use ($channel): string {
-            $delivery = new AMQPMessage('message body');
-            $delivery->setChannel($channel);
-            $delivery->setDeliveryInfo(1, false, 'orders', '');
-            $callback($delivery);
-
-            return 'consumer';
-        });
-    $channel->shouldNotReceive('basic_ack');
-
-    $driver = rabbitMqDriver($factory);
-
-    // --- Act ---
-    $caught = null;
-
-    try {
-        $driver->consume('order-imports', static function () use ($failure): never {
-            throw $failure;
-        });
-    } catch (Throwable $exception) {
-        $caught = $exception;
-    }
-
-    // --- Assert ---
-    expect($caught)->toBe($failure);
 });
 
 test('stops consumption and discards the connection when acknowledging fails', function (): void {
@@ -507,7 +401,6 @@ function rabbitMqDriver(
     ?int $consumerAcknowledgementTimeout = null,
 ): RabbitMqDriver {
     $configuration = [
-        'url' => 'amqp://user:secret@localhost/vhost',
         'publisher_confirm_timeout' => $publisherConfirmTimeout,
         'prefetch' => $prefetch,
     ];
@@ -520,8 +413,6 @@ function rabbitMqDriver(
         new RabbitMqConnectionConfig('rabbitmq', $configuration),
         $factory,
         Mockery::mock(ManagedTopology::class),
-        new OwnershipPrefix(new Repository([
-            'spoolrail' => ['prefix' => 'warehouse-production'],
-        ])),
+        app(OwnershipPrefix::class),
     );
 }

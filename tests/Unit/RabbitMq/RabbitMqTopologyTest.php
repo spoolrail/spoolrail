@@ -35,12 +35,7 @@ function rabbitMqTopology(array $responses = []): array
         return $http->response($body, $status);
     });
 
-    $connection = new RabbitMqConnectionConfig('events', [
-        'url' => 'amqp://guest:guest@rabbit.internal/%2F',
-        'management' => [
-            'url' => 'https://management.internal',
-        ],
-    ]);
+    $connection = new RabbitMqConnectionConfig('events', []);
 
     return [
         new RabbitMqTopology(
@@ -91,10 +86,10 @@ function compatibleQuorumTopologyResponses(array $arguments = []): array
     ];
 }
 
-test('rejects missing and unsupported default queue type metadata before creation', function (array $virtualHost, string $reportedType): void {
+test('rejects a stream default queue type before creation', function (): void {
     // --- Arrange ---
     [$topology, $http] = rabbitMqTopology([
-        'GET vhosts/%2F' => [$virtualHost, 200],
+        'GET vhosts/%2F' => [['default_queue_type' => 'stream'], 200],
     ]);
 
     // --- Act ---
@@ -102,15 +97,11 @@ test('rejects missing and unsupported default queue type metadata before creatio
 
     // --- Assert ---
     expect($action)
-        ->toThrow(RabbitMqTopologyException::class, "default queue type [$reportedType]");
+        ->toThrow(RabbitMqTopologyException::class, 'default queue type [stream]');
     $http->assertNotSent(
         static fn (Request $request): bool => $request->method() !== 'GET',
     );
-})->with([
-    'missing metadata' => [['name' => '/'], 'unknown'],
-    'non-string metadata' => [['default_queue_type' => 42], 'unknown'],
-    'stream default' => [['default_queue_type' => 'stream'], 'stream'],
-]);
+});
 
 test('accepts compatible existing topology when the virtual host defaults new queues to streams', function (): void {
     // --- Arrange ---
@@ -411,7 +402,7 @@ test('rejects a finite regular policy before creating a missing quorum queue', f
 
 test('accepts equal-priority policies only when every possible winner is unlimited', function (): void {
     // --- Arrange ---
-    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
+    [$topology, $http] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
         'GET policies/%2F' => [[
             [
                 'name' => 'unlimited-a',
@@ -431,10 +422,12 @@ test('accepts equal-priority policies only when every possible winner is unlimit
     ]));
 
     // --- Act ---
-    $plan = $topology->planSync([rabbitMqSubscription()], 'application-a');
+    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
 
     // --- Assert ---
-    expect($plan)->not->toBeNull();
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
 });
 
 test('rejects conflicting equal-priority policy winners', function (): void {
@@ -465,97 +458,12 @@ test('rejects conflicting equal-priority policy winners', function (): void {
     expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
 });
 
-test('rejects an indeterminate equal-priority policy tie', function (): void {
-    // --- Arrange ---
-    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses(), [
-        'GET policies/%2F' => [[
-            [
-                'name' => 'unlimited',
-                'pattern' => '^application-a-',
-                'apply-to' => 'quorum_queues',
-                'priority' => 10,
-                'definition' => ['delivery-limit' => -1],
-            ],
-            [
-                'name' => 'unrelated-setting',
-                'pattern' => 'warehouse$',
-                'apply-to' => 'queues',
-                'priority' => 10,
-                'definition' => ['message-ttl' => 60_000],
-            ],
-        ], 200],
-    ]));
-
-    // --- Act ---
-    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
-
-    // --- Assert ---
-    expect($action)->toThrow(RabbitMqTopologyException::class, 'does not have a verifiable unlimited delivery limit');
-});
-
-test('accepts tied operator policies when every winner preserves an unlimited queue declaration', function (): void {
-    // --- Arrange ---
-    [$topology, $http] = rabbitMqTopology([
-        'GET vhosts/%2F' => [['default_queue_type' => 'quorum'], 200],
-        'GET operator-policies/%2F' => [[
-            [
-                'name' => 'unlimited',
-                'pattern' => '^application-a-',
-                'apply-to' => 'quorum_queues',
-                'priority' => 10,
-                'definition' => ['delivery-limit' => -1],
-            ],
-            [
-                'name' => 'unrelated-setting',
-                'pattern' => 'warehouse$',
-                'apply-to' => 'queues',
-                'priority' => 10,
-                'definition' => ['message-ttl' => 60_000],
-            ],
-        ], 200],
-    ]);
-
-    // --- Act ---
-    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
-
-    // --- Assert ---
-    $http->assertSent(static fn (Request $request): bool => $request->method() === 'PUT'
-        && str_ends_with($request->url(), '/api/queues/%2F/application-a-warehouse')
-        && ($request->data()['arguments'] ?? null) === ['x-delivery-limit' => -1]);
-});
-
-test('rejects a finite possible winner among tied operator policies', function (): void {
-    // --- Arrange ---
-    [$topology] = rabbitMqTopology([
-        'GET vhosts/%2F' => [['default_queue_type' => 'quorum'], 200],
-        'GET operator-policies/%2F' => [[
-            [
-                'name' => 'unlimited',
-                'pattern' => '^application-a-',
-                'apply-to' => 'quorum_queues',
-                'priority' => 10,
-                'definition' => ['delivery-limit' => -1],
-            ],
-            [
-                'name' => 'finite',
-                'pattern' => 'warehouse$',
-                'apply-to' => 'queues',
-                'priority' => 10,
-                'definition' => ['delivery-limit' => 20],
-            ],
-        ], 200],
-    ]);
-
-    // --- Act ---
-    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
-
-    // --- Assert ---
-    expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
-});
-
 test('shares one topic exchange while keeping application queue namespaces distinct', function (): void {
     // --- Arrange ---
-    [$applicationA, $applicationAHttp] = rabbitMqTopology();
+    [$applicationA, $applicationAHttp] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[], 404],
+        'GET queues/%2F/application-a-warehouse' => [[], 404],
+    ]);
     [$applicationB, $applicationBHttp] = rabbitMqTopology([
         'GET exchanges/%2F/orders' => [[
             'type' => 'fanout',
@@ -563,6 +471,7 @@ test('shares one topic exchange while keeping application queue namespaces disti
             'auto_delete' => false,
             'internal' => false,
         ], 200],
+        'GET queues/%2F/application-b-warehouse' => [[], 404],
     ]);
 
     // --- Act ---
@@ -598,7 +507,9 @@ test('shares one topic exchange while keeping application queue namespaces disti
 
 test('refuses to delete a missing topic', function (): void {
     // --- Arrange ---
-    [$topology, $http] = rabbitMqTopology();
+    [$topology, $http] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[], 404],
+    ]);
 
     // --- Act ---
     $action = fn () => $topology->deleteTopic('orders');

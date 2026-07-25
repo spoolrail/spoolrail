@@ -70,42 +70,21 @@ test('hydrates only supported fields from a wire envelope', function (): void {
 });
 
 test('rejects JSON values that are not object envelopes', function (string $json): void {
-    // --- Arrange ---
     $serializer = new MessageSerializer;
 
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $serializer->deserialize($json);
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(InvalidMessageEnvelopeException::class);
-    expect($failure?->getMessage())->toBe('The message envelope must be a JSON object.');
+    expect(fn (): Message => $serializer->deserialize($json))
+        ->toThrow(InvalidMessageEnvelopeException::class, 'The message envelope must be a JSON object.');
 })->with([
     'array' => '[]',
     'scalar' => 'null',
 ]);
 
 test('rejects wire envelopes missing a required field', function (string $field): void {
-    // --- Arrange ---
     $serializer = new MessageSerializer;
     $json = messageSerializerEnvelope(missing: $field);
 
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $serializer->deserialize($json);
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(InvalidMessageEnvelopeException::class);
+    expect(fn (): Message => $serializer->deserialize($json))
+        ->toThrow(InvalidMessageEnvelopeException::class);
 })->with([
     'ID' => 'id',
     'type' => 'type',
@@ -114,85 +93,53 @@ test('rejects wire envelopes missing a required field', function (string $field)
 ]);
 
 test('rejects message IDs that are not UUIDv7', function (string $id): void {
-    // --- Arrange ---
     $serializer = new MessageSerializer;
     $json = messageSerializerEnvelope(['id' => $id]);
 
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $serializer->deserialize($json);
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(InvalidMessageEnvelopeException::class);
-    expect($failure?->getMessage())->toBe('The message envelope must contain a valid UUIDv7 ID.');
+    expect(fn (): Message => $serializer->deserialize($json))
+        ->toThrow(
+            InvalidMessageEnvelopeException::class,
+            'The message envelope must contain a valid UUIDv7 ID.',
+        );
 })->with([
     'malformed UUID' => 'not-a-uuid',
     'different UUID version' => 'f81d4fae-7dec-4a0d-a765-00a0c91e6bf6',
 ]);
 
 test('rejects invalid message types', function (mixed $type): void {
-    // --- Arrange ---
     $serializer = new MessageSerializer;
     $json = messageSerializerEnvelope(['type' => $type]);
 
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $serializer->deserialize($json);
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(InvalidMessageEnvelopeException::class);
-    expect($failure?->getMessage())->toBe('The message envelope must contain a non-empty type.');
+    expect(fn (): Message => $serializer->deserialize($json))
+        ->toThrow(
+            InvalidMessageEnvelopeException::class,
+            'The message envelope must contain a non-empty type.',
+        );
 })->with([
     'whitespace string' => " \t\n",
     'number' => 42,
 ]);
 
 test('rejects payloads that are not arrays', function (): void {
-    // --- Arrange ---
     $serializer = new MessageSerializer;
     $json = messageSerializerEnvelope(['payload' => 'not-an-array']);
 
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $serializer->deserialize($json);
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(InvalidMessageEnvelopeException::class);
-    expect($failure?->getMessage())->toBe('The message envelope must contain an array payload.');
+    expect(fn (): Message => $serializer->deserialize($json))
+        ->toThrow(
+            InvalidMessageEnvelopeException::class,
+            'The message envelope must contain an array payload.',
+        );
 });
 
 test('rejects non-canonical publication timestamps', function (string $publishedAt): void {
-    // --- Arrange ---
     $serializer = new MessageSerializer;
     $json = messageSerializerEnvelope(['published_at' => $publishedAt]);
 
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $serializer->deserialize($json);
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(InvalidMessageEnvelopeException::class);
-    expect($failure?->getMessage())->toBe('The message envelope must contain a valid canonical UTC millisecond timestamp.');
+    expect(fn (): Message => $serializer->deserialize($json))
+        ->toThrow(
+            InvalidMessageEnvelopeException::class,
+            'The message envelope must contain a valid canonical UTC millisecond timestamp.',
+        );
 })->with([
     'offset instead of UTC' => '2026-07-15T17:23:08.417+03:00',
     'missing millisecond precision' => '2026-07-15T14:23:08Z',

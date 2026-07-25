@@ -24,9 +24,6 @@ class DeleteUndeclaredSubscriptions
      */
     public function run(string $connectionName, ?string $retiredPrefix): array
     {
-        $topology = $this->manager->connection($connectionName)->managedTopology()
-            ?? throw new ManagedTopologyUnavailableException($connectionName);
-
         $currentPrefix = $this->prefix->value();
         $targetPrefix = $retiredPrefix === null
             ? $currentPrefix
@@ -35,6 +32,9 @@ class DeleteUndeclaredSubscriptions
         if ($retiredPrefix !== null && $targetPrefix === $currentPrefix) {
             throw new CurrentPrefixCannotBeRetiredException($currentPrefix);
         }
+
+        $topology = $this->manager->connection($connectionName)->managedTopology()
+            ?? throw new ManagedTopologyUnavailableException($connectionName);
 
         $undeclared = $topology->undeclaredSubscriptions(
             $retiredPrefix === null ? $this->subscriptionsFor($connectionName) : [],

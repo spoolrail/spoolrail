@@ -2,29 +2,38 @@
 
 declare(strict_types=1);
 
-use Illuminate\Contracts\Foundation\Application;
-use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\SpoolrailServiceProvider;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+
+test('loads the built-in RabbitMQ connection template', function (): void {
+    $connection = config('spoolrail.connections.rabbitmq');
+
+    expect($connection)->toBeArray();
+    expect($connection['driver'])->toBe('rabbitmq');
+    expect($connection['scheme'])->toBe('amqp');
+    expect($connection['host'])->toBe('127.0.0.1');
+    expect($connection['username'])->toBe('spoolrail');
+    expect($connection['password'])->toBe('spoolrail');
+    expect($connection['ca_file'])->toBeNull();
+    expect($connection['connection_timeout'])->toBe(3);
+    expect($connection['publisher_confirm_timeout'])->toBe(60);
+    expect($connection['consumer_ack_timeout'])->toBeNull();
+    expect($connection['prefetch'])->toBe(10);
+    expect($connection['management']['url'])->toBe('http://127.0.0.1:15672');
+    expect($connection['management']['username'])->toBe('spoolrail');
+    expect($connection['management']['password'])->toBe('spoolrail');
+    expect($connection['management']['ca_file'])->toBeNull();
+});
 
 test('loads application subscription routes when booted without resolving a broker connection', function (): void {
     // --- Arrange ---
     app()->setBasePath(__DIR__.'/../Fixtures/application');
 
-    config()->set('spoolrail.default', 'route-test');
-    config()->set('spoolrail.connections.route-test', ['driver' => 'route-test']);
-
-    $connectionsCreated = 0;
-    Spoolrail::extend('route-test', function (Application $app, array $config, string $name) use (&$connectionsCreated): ArrayDriver {
-        $connectionsCreated++;
-
-        return new ArrayDriver(
-            $name,
-            'route-test',
-            $app->make(SubscriptionRegistry::class),
-        );
-    });
+    Spoolrail::extend(
+        'array',
+        static fn (): never => throw new RuntimeException('Subscription route loading resolved a broker connection.'),
+    );
 
     $provider = new SpoolrailServiceProvider(app());
 
@@ -34,5 +43,4 @@ test('loads application subscription routes when booted without resolving a brok
 
     // --- Assert ---
     expect($subscription->topic())->toBe('orders');
-    expect($connectionsCreated)->toBe(0);
 });
