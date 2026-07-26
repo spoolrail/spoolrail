@@ -11,7 +11,7 @@ use Spoolrail\Spoolrail\Exceptions\InvalidMessageException;
 readonly class Message
 {
     /**
-     * @param  array<mixed>  $payload
+     * @param  array<array-key, mixed>  $payload
      */
     private function __construct(
         public string $id,
@@ -21,7 +21,7 @@ readonly class Message
     ) {}
 
     /**
-     * @param  array<mixed>  $payload
+     * @param  array<array-key, mixed>  $payload
      */
     public static function make(string $type, array $payload): self
     {
@@ -40,7 +40,7 @@ readonly class Message
     /**
      * @internal
      *
-     * @param  array<mixed>  $payload
+     * @param  array<array-key, mixed>  $payload
      */
     public static function fromTransport(
         string $id,

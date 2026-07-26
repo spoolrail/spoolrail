@@ -33,6 +33,8 @@ class ArrayDriver implements Driver
 
     /**
      * @param  Closure(string): void  $handoff
+     *
+     * @throws Throwable
      */
     public function consume(string $subscription, Closure $handoff): void
     {

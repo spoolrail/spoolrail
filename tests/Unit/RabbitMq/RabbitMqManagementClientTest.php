@@ -196,11 +196,10 @@ test('reports Management API authentication and permission failures without cred
 
     expect(fn (): array => $client->overview())
         ->toThrow(function (RabbitMqManagementException $exception) use ($status): void {
-            expect($exception->getMessage())->toBe(
-                "RabbitMQ connection [events] Management API returned HTTP $status while reading the broker version.",
-            );
-            expect($exception->getMessage())->not->toContain('runtime-secret');
-            expect($exception->getMessage())->not->toContain('control-secret');
+            expect($exception->getMessage())
+                ->toBe("RabbitMQ connection [events] Management API returned HTTP $status while reading the broker version.")
+                ->not->toContain('runtime-secret')
+                ->not->toContain('control-secret');
         });
 })->with([
     'authentication failure' => 401,
@@ -236,7 +235,8 @@ test('preserves TLS request failure diagnostics without surfacing credentials', 
 
             $diagnostics = $exception->getMessage().' '.($exception->getPrevious()?->getMessage() ?? '');
 
-            expect($diagnostics)->not->toContain('runtime-secret');
-            expect($diagnostics)->not->toContain('control-secret');
+            expect($diagnostics)
+                ->not->toContain('runtime-secret')
+                ->not->toContain('control-secret');
         });
 });

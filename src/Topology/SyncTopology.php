@@ -12,12 +12,12 @@ use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Throwable;
 
-class SyncTopology
+readonly class SyncTopology
 {
     public function __construct(
-        private readonly SpoolrailManager $manager,
-        private readonly SubscriptionRegistry $subscriptions,
-        private readonly OwnershipPrefix $prefix,
+        private SpoolrailManager $manager,
+        private SubscriptionRegistry $subscriptions,
+        private OwnershipPrefix $prefix,
     ) {}
 
     public function run(): SyncTopologyResult

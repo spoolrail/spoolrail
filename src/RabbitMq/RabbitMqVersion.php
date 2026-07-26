@@ -6,5 +6,5 @@ namespace Spoolrail\Spoolrail\RabbitMq;
 
 class RabbitMqVersion
 {
-    public const MINIMUM = '4.3';
+    public const string MINIMUM = '4.3';
 }

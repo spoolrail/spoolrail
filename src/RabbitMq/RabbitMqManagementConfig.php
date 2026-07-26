@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\RabbitMq;
 
-class RabbitMqManagementConfig
+readonly class RabbitMqManagementConfig
 {
     public function __construct(
-        public readonly string $url,
-        public readonly string $username,
-        public readonly string $password,
-        public readonly ?string $caFile,
+        public string $url,
+        public string $username,
+        public string $password,
+        public ?string $caFile,
     ) {}
 }

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Tests\Concerns;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Throwable;
@@ -39,7 +41,12 @@ trait InteractsWithRabbitMq
             ->throw();
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @return array<string, mixed>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
     protected function rabbitMqQueue(string $queue): array
     {
         return $this->rabbitMqManagement
@@ -48,7 +55,12 @@ trait InteractsWithRabbitMq
             ->json();
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * @return list<array<string, mixed>>
+     *
+     * @throws ConnectionException
+     * @throws RequestException
+     */
     protected function drainRabbitMqDeliveries(string $queue, int $count): array
     {
         return $this->rabbitMqManagement

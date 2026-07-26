@@ -63,7 +63,7 @@ class RabbitMqConnectionFactory
 
         $config->setHeartbeat($heartbeat);
         $config->setKeepalive($heartbeat === 0);
-        $config->setConnectionName("spoolrail:{$connection->connection}");
+        $config->setConnectionName("spoolrail:$connection->connection");
 
         $readWriteTimeout = max(3.0, $heartbeat * 2.0);
 

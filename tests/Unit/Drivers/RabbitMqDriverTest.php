@@ -139,6 +139,8 @@ test('turns a negative publisher confirmation into a publication rejection', fun
             expect($nack)->toBeInstanceOf(Closure::class);
 
             $nack();
+
+            throw new LogicException('Negative acknowledgement handler returned.');
         });
 
     $driver = rabbitMqDriver($factory);

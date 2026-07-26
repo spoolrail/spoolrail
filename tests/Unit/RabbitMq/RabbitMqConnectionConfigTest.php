@@ -144,7 +144,8 @@ test('never includes configured credentials in configuration diagnostics', funct
 
     expect(fn (): RabbitMqManagementConfig => $management->management())
         ->toThrow(function (RabbitMqConfigurationException $exception): void {
-            expect($exception->getMessage())->not->toContain('topology');
-            expect($exception->getMessage())->not->toContain('management-secret');
+            expect($exception->getMessage())
+                ->not->toContain('topology')
+                ->not->toContain('management-secret');
         });
 });

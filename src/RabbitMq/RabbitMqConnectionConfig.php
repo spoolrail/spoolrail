@@ -7,14 +7,14 @@ namespace Spoolrail\Spoolrail\RabbitMq;
 use Illuminate\Support\Arr;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigurationException;
 
-class RabbitMqConnectionConfig
+readonly class RabbitMqConnectionConfig
 {
     /**
-     * @param  array<mixed>  $configuration
+     * @param  array<array-key, mixed>  $configuration
      */
     public function __construct(
-        public readonly string $connection,
-        private readonly array $configuration,
+        public string $connection,
+        private array $configuration,
     ) {
         $this->scheme();
         $this->hosts();
@@ -135,7 +135,7 @@ class RabbitMqConnectionConfig
     }
 
     /**
-     * @param  array<mixed>  $configuration
+     * @param  array<array-key, mixed>  $configuration
      */
     private function managementUrl(array $configuration): string
     {

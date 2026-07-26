@@ -116,7 +116,7 @@ test('reports every preflight failure before applying a valid plan', function ()
 
     try {
         $this->artisan('spoolrail:sync')->run();
-    } catch (Throwable $exception) {
+    } catch (TopologyPreflightException $exception) {
         $failure = $exception;
     }
 

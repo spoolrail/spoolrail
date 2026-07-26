@@ -6,7 +6,7 @@ namespace Spoolrail\Spoolrail;
 
 class LogicalName
 {
-    public const PATTERN = '/\A[A-Za-z][A-Za-z0-9_-]{2,}\z/D';
+    public const string PATTERN = '/\A[A-Za-z][A-Za-z0-9_-]{2,}\z/';
 
     public static function isValid(string $value): bool
     {

@@ -415,8 +415,10 @@ class RabbitMqManagementClient
     {
         $management = $this->management();
 
-        return $this->http
-            ->baseUrl($this->apiUrl())
+        /** @var PendingRequest $pending */
+        $pending = $this->http->baseUrl($this->apiUrl());
+
+        return $pending
             ->withBasicAuth($management->username, $management->password)
             ->acceptJson()
             ->asJson()

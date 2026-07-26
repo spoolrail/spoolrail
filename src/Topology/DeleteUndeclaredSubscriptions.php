@@ -11,12 +11,12 @@ use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
-class DeleteUndeclaredSubscriptions
+readonly class DeleteUndeclaredSubscriptions
 {
     public function __construct(
-        private readonly SpoolrailManager $manager,
-        private readonly SubscriptionRegistry $subscriptions,
-        private readonly OwnershipPrefix $prefix,
+        private SpoolrailManager $manager,
+        private SubscriptionRegistry $subscriptions,
+        private OwnershipPrefix $prefix,
     ) {}
 
     /**

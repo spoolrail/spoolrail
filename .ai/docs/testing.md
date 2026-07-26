@@ -37,7 +37,7 @@ Structure tests with meaningful setup, action, and verification work in explicit
 
 ## Assertions
 
-Prefer explicit, single-purpose assertions over dense chained helpers.
+Prefer explicit assertions that keep each subject and expectation easy to identify. Chain only closely related expectations when doing so makes the test easier to read.
 
 ## Execution
 

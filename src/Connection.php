@@ -14,7 +14,7 @@ use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 
 class Connection
 {
-    public const MAX_ENVELOPE_BYTES = 262_144;
+    public const int MAX_ENVELOPE_BYTES = 262_144;
 
     public function __construct(
         private readonly Driver $driver,

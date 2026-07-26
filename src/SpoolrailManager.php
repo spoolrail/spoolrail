@@ -6,6 +6,7 @@ namespace Spoolrail\Spoolrail;
 
 use Closure;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use PhpAmqpLib\Connection\AMQPConnectionConfig;
@@ -14,6 +15,7 @@ use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
 use Spoolrail\Spoolrail\Exceptions\MissingRabbitMqDependencyException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigurationException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
@@ -28,7 +30,7 @@ class SpoolrailManager
     private array $connections = [];
 
     /**
-     * @var array<string, Closure(Application, array<mixed>, string): Driver>
+     * @var array<string, Closure(Application, array<array-key, mixed>, string): Driver>
      */
     private array $customCreators = [];
 
@@ -130,7 +132,7 @@ class SpoolrailManager
     }
 
     /**
-     * @return array<mixed>
+     * @return array<array-key, mixed>
      */
     private function connectionConfig(string $name): array
     {
@@ -148,7 +150,7 @@ class SpoolrailManager
     }
 
     /**
-     * @param  array<mixed>  $config
+     * @param  array<array-key, mixed>  $config
      */
     private function driverName(string $connection, array $config): string
     {
@@ -171,7 +173,11 @@ class SpoolrailManager
     }
 
     /**
-     * @param  array<mixed>  $configuration
+     * @param  array<array-key, mixed>  $configuration
+     *
+     * @throws BindingResolutionException
+     * @throws MissingRabbitMqDependencyException
+     * @throws RabbitMqConfigurationException
      */
     private function createRabbitMqDriver(string $name, array $configuration): RabbitMqDriver
     {

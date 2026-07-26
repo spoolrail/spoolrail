@@ -14,14 +14,14 @@ use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\MessageSerializer;
 use Spoolrail\Spoolrail\SpoolrailManager;
 
-class SubscriptionConsumer
+readonly class SubscriptionConsumer
 {
     public function __construct(
-        private readonly SpoolrailManager $manager,
-        private readonly SubscriptionRegistry $subscriptions,
-        private readonly MessageSerializer $serializer,
-        private readonly QueueFactory $queues,
-        private readonly HandlerQueuePolicy $handlerQueuePolicy,
+        private SpoolrailManager $manager,
+        private SubscriptionRegistry $subscriptions,
+        private MessageSerializer $serializer,
+        private QueueFactory $queues,
+        private HandlerQueuePolicy $handlerQueuePolicy,
     ) {}
 
     public function consume(string $subscriptionName): void

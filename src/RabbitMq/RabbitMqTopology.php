@@ -11,11 +11,11 @@ use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 
-class RabbitMqTopology implements ManagedTopology
+readonly class RabbitMqTopology implements ManagedTopology
 {
     public function __construct(
-        private readonly RabbitMqConnectionConfig $connection,
-        private readonly RabbitMqManagementClient $management,
+        private RabbitMqConnectionConfig $connection,
+        private RabbitMqManagementClient $management,
     ) {}
 
     /**
@@ -181,7 +181,7 @@ class RabbitMqTopology implements ManagedTopology
     {
         $type = $this->management->virtualHost()['default_queue_type'] ?? null;
 
-        if (! is_string($type) || ! in_array($type, ['classic', 'quorum'], true)) {
+        if (! in_array($type, ['classic', 'quorum'], true)) {
             throw RabbitMqTopologyException::unsupportedDefaultQueueType(
                 is_string($type) ? $type : 'unknown',
             );
@@ -246,7 +246,6 @@ class RabbitMqTopology implements ManagedTopology
         foreach ([$operatorPolicies, $policies] as $policySet) {
             $limit = $this->applicableDeliveryLimit(
                 $queue,
-                'quorum',
                 $policySet,
             );
 
@@ -286,7 +285,7 @@ class RabbitMqTopology implements ManagedTopology
 
         $type = $queue['type'] ?? null;
 
-        if (! is_string($type) || ! in_array($type, ['classic', 'quorum'], true)) {
+        if (! in_array($type, ['classic', 'quorum'], true)) {
             throw RabbitMqTopologyException::incompatibleQueue(
                 $name,
                 'queue type must be classic or quorum',
@@ -321,8 +320,8 @@ class RabbitMqTopology implements ManagedTopology
 
         $limits = [
             $declaredLimit,
-            $this->applicableDeliveryLimit($name, 'quorum', $policies),
-            $this->applicableDeliveryLimit($name, 'quorum', $operatorPolicies),
+            $this->applicableDeliveryLimit($name, $policies),
+            $this->applicableDeliveryLimit($name, $operatorPolicies),
         ];
 
         foreach ($limits as $limit) {
@@ -363,7 +362,6 @@ class RabbitMqTopology implements ManagedTopology
             ($binding['source'] ?? null) !== $topic
             || ($binding['destination_type'] ?? null) !== 'queue'
             || ($binding['routing_key'] ?? null) !== ''
-            || ! is_array($arguments)
             || $arguments !== []
         ) {
             throw RabbitMqTopologyException::incompatibleBindings($queue, $topic);
@@ -377,12 +375,11 @@ class RabbitMqTopology implements ManagedTopology
      */
     private function applicableDeliveryLimit(
         string $queue,
-        string $queueType,
         array $policies,
     ): ?int {
         $applicable = array_values(array_filter(
             $policies,
-            fn (array $policy): bool => $this->policyApplies($policy, $queue, $queueType),
+            fn (array $policy): bool => $this->policyApplies($policy, $queue),
         ));
 
         usort(
@@ -424,12 +421,12 @@ class RabbitMqTopology implements ManagedTopology
     /**
      * @param  array<string, mixed>  $policy
      */
-    private function policyApplies(array $policy, string $queue, string $queueType): bool
+    private function policyApplies(array $policy, string $queue): bool
     {
         $applyTo = $policy['apply-to'] ?? null;
 
         if (
-            ! in_array($applyTo, ['all', 'queues', "{$queueType}_queues"], true)
+            ! in_array($applyTo, ['all', 'queues', 'quorum_queues'], true)
             || ! is_string($policy['pattern'] ?? null)
         ) {
             return false;

@@ -149,6 +149,8 @@ test('rejects non-canonical publication timestamps', function (string $published
 
 /**
  * @param  array<string, mixed>  $overrides
+ *
+ * @throws JsonException
  */
 function messageSerializerEnvelope(array $overrides = [], ?string $missing = null): string
 {

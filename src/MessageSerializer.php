@@ -45,7 +45,7 @@ class MessageSerializer
     }
 
     /**
-     * @param  array<mixed>  $envelope
+     * @param  array<array-key, mixed>  $envelope
      */
     private function id(array $envelope): string
     {
@@ -65,7 +65,7 @@ class MessageSerializer
     }
 
     /**
-     * @param  array<mixed>  $envelope
+     * @param  array<array-key, mixed>  $envelope
      */
     private function type(array $envelope): string
     {
@@ -79,8 +79,8 @@ class MessageSerializer
     }
 
     /**
-     * @param  array<mixed>  $envelope
-     * @return array<mixed>
+     * @param  array<array-key, mixed>  $envelope
+     * @return array<array-key, mixed>
      */
     private function payload(array $envelope): array
     {
@@ -94,7 +94,7 @@ class MessageSerializer
     }
 
     /**
-     * @param  array<mixed>  $envelope
+     * @param  array<array-key, mixed>  $envelope
      */
     private function publishedAt(array $envelope): CarbonImmutable
     {

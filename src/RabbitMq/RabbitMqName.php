@@ -9,7 +9,7 @@ use Spoolrail\Spoolrail\Exceptions\InvalidRabbitMqTopicNameException;
 
 class RabbitMqName
 {
-    public const MAX_BYTES = 255;
+    public const int MAX_BYTES = 255;
 
     public static function queue(string $ownershipPrefix, string $subscription): string
     {

@@ -13,6 +13,7 @@ use Illuminate\Queue\Attributes\Tries;
 use ReflectionClass;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Message;
+use Throwable;
 
 class HandlerQueuePolicy
 {
@@ -28,6 +29,8 @@ class HandlerQueuePolicy
 
     /**
      * @param  class-string<MessageHandler>  $handler
+     *
+     * @throws Throwable
      */
     public function apply(string $handler, Message $message, HandleMessageJob $job): void
     {

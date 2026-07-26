@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Subscriptions;
 
 use ReflectionClass;
+use ReflectionException;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\LogicalName;
@@ -19,6 +20,9 @@ class SubscriptionRegistry
 
     /**
      * @param  class-string  $handler
+     *
+     * @throws InvalidSubscriptionException
+     * @throws ReflectionException
      */
     public function subscribe(string $topic, string $name, string $handler): Subscription
     {
