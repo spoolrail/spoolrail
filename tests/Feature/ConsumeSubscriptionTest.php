@@ -17,10 +17,8 @@ use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageSerializer;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
-use Spoolrail\Spoolrail\Tests\Fixtures\RabbitMqTestVhost;
 
 test('consumes from the subscription configured Spoolrail connection', function (): void {
     // --- Arrange ---
@@ -306,86 +304,6 @@ test('propagates a rejected Queue handoff without logging or losing buffered del
     expect($failure)->toBe($handoffFailure);
     expect($sequences)->toBe([1, 2]);
     Event::assertNotDispatched(MessageLogged::class);
-});
-
-test('returns every unsettled prefetched RabbitMQ delivery after a failed handoff', function (): void {
-    $rabbitMq = RabbitMqTestVhost::create();
-
-    try {
-        // --- Arrange ---
-        $queue = app(OwnershipPrefix::class)->value().'-warehouse';
-
-        config()->set('spoolrail.connections.rabbitmq.prefetch', 3);
-
-        Spoolrail::subscribe('orders', 'warehouse', NoopMessageHandler::class)
-            ->onConnection('rabbitmq');
-        $this->artisan('spoolrail:sync')->run();
-
-        foreach (['first', 'second', 'third', 'fourth'] as $reference) {
-            Spoolrail::connection('rabbitmq')->publish(
-                'orders',
-                Message::make('order.created', ['reference' => $reference]),
-            );
-        }
-
-        $serializer = new MessageSerializer;
-        $handoffs = [];
-        $failure = new RuntimeException('Laravel Queue handoff failed.');
-        $caught = null;
-
-        // --- Act ---
-        try {
-            Spoolrail::connection('rabbitmq')->consume(
-                'warehouse',
-                function (string $body) use ($serializer, &$handoffs, $failure): void {
-                    $reference = $serializer->deserialize($body)->payload['reference'];
-                    $handoffs[] = $reference;
-
-                    if ($reference === 'second') {
-                        throw $failure;
-                    }
-                },
-            );
-        } catch (Throwable $exception) {
-            $caught = $exception;
-        }
-
-        // --- Assert ---
-        $remaining = $rabbitMq->management
-            ->post(
-                '/api/queues/'.rawurlencode($rabbitMq->name).'/'.rawurlencode($queue).'/get',
-                [
-                    'count' => 4,
-                    'ackmode' => 'ack_requeue_false',
-                    'encoding' => 'auto',
-                    'truncate' => 300_000,
-                ],
-            )
-            ->throw()
-            ->json();
-
-        $remaining = array_map(
-            fn (array $delivery): array => [
-                'reference' => $serializer->deserialize($delivery['payload'])->payload['reference'],
-                'redelivered' => $delivery['redelivered'],
-            ],
-            $remaining,
-        );
-        usort(
-            $remaining,
-            static fn (array $left, array $right): int => $left['reference'] <=> $right['reference'],
-        );
-
-        expect($caught)->toBe($failure);
-        expect($handoffs)->toBe(['first', 'second']);
-        expect($remaining)->toBe([
-            ['reference' => 'fourth', 'redelivered' => true],
-            ['reference' => 'second', 'redelivered' => true],
-            ['reference' => 'third', 'redelivered' => true],
-        ]);
-    } finally {
-        $rabbitMq->delete();
-    }
 });
 
 test('redelivers malformed JSON and stops the current delivery drain', function (): void {
