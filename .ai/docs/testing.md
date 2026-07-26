@@ -3,17 +3,13 @@
 ## Approach
 
 - Use Pest + Orchestra Testbench, and keep the test namespace aligned with Composer `autoload-dev`.
-- For behavior changes and bug fixes, prefer starting with a failing test that captures the expected outcome, then implement the change.
 - Start tests from the package's normally loaded configuration and Testbench defaults. Put suite-wide environment values in `phpunit.xml.dist`; keep per-test overrides to values material to the scenario instead of reconstructing configuration registries as routine setup.
-- Avoid mocks unless the dependency crosses an external I/O boundary, represents a supported extension point, has behavior that is already proved more directly elsewhere, or would make the test impractical to run locally. Prefer real application objects.
 
 ## Test Suites
 
 - `tests/Feature`: default. Test package behavior from the documented public API inward, asserting only externally observable outcomes. Test internal machinery in `Unit`.
 - `tests/Unit`: tests for individual classes, mirroring `src/` namespaces. Strict isolation NOT required.
-- `tests/External`: real interactions with external services (no mocking), organized by provider.
-
-Unmocked external calls belong in `tests/External` only. Drivers that don't hit external services belong in `Unit`; drivers that do belong in `External`.
+- `tests/External`: tests against real services that are not part of the repository-managed ordinary test environment, organized by provider—for example, credentialed remote APIs.
 
 ## Fixtures
 

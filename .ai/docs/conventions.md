@@ -2,8 +2,6 @@
 
 ## General
 
-- Prefer guard clauses and straight-line control flow; keep nesting shallow.
-- Use separate operations instead of boolean parameters that select distinct behaviors.
 - Favor Laravel collection methods when they are at least as clear as the equivalent loop.
 - MUST NOT use `final`.
 - Add type declarations to package-owned code wherever compatible with PHP and framework contracts and conventions.
@@ -20,21 +18,10 @@
 - Access configuration where it is interpreted, with explicit defaults; avoid wrappers that only relay values. For complex configuration blocks, follow how analogous components in the Laravel framework and its first-party packages read and interpret their configuration.
 - Treat configuration as trusted application input. Do not add defensive validation merely to fail earlier or produce friendlier errors.
 
-## Method Complexity
-
-Methods should operate at a single level of abstraction — describe _what_ happens, not _how_. If a method exceeds ~20 lines of logic (excluding validation arrays and return statements), it likely mixes concerns.
-
-**Signs a method needs extraction:**
-
-- Nested closures or callbacks with their own branching
-- Multiple try/catch blocks or catch-and-retry patterns
-- Data formatting or transformation mixed with business logic
-- Sequential steps that each deserve a descriptive name
-
 ## Exceptions: Centralize, Don't Scatter
 
 - Let exceptions bubble to the host application or framework boundary by default.
-- Add `try/catch` only when it meaningfully changes behavior: a fallback path, retry, or converting to a domain exception. Never use it for routine control flow.
+- Add `try/catch` only when it meaningfully changes behavior through recovery or rollback, retry, fallback, or exception translation. Never use it for routine control flow.
 - Use `finally` only for guaranteed resource cleanup (locks, temp files, external handles).
 - Group domain exceptions by stable, caller-relevant failure categories rather than throw sites.
 - Choose an exception's base class according to the catch boundary callers need, preferring the closest suitable SPL or framework exception class.
