@@ -52,6 +52,8 @@ composer test -- tests/Unit/PackageNameServiceProviderTest.php
 composer test -- --testsuite=Unit
 ```
 
+Reserve the full mutation suite for major project milestones and explicit requests, after the ordinary test suite passes.
+
 ## Verification
 
 After changes, run `composer format` and `composer analyse` before finalizing.

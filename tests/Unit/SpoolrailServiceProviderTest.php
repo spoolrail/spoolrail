@@ -6,6 +6,22 @@ use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\SpoolrailServiceProvider;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
+test('publishes the package configuration under the spoolrail config tag', function (): void {
+    // --- Act ---
+    $paths = SpoolrailServiceProvider::pathsToPublish(
+        SpoolrailServiceProvider::class,
+        'spoolrail-config',
+    );
+
+    // --- Assert ---
+    expect($paths)->toHaveCount(1);
+
+    $source = array_key_first($paths);
+
+    expect(realpath($source))->toBe(realpath(dirname(__DIR__, 2).'/config/spoolrail.php'));
+    expect($paths[$source])->toBe(config_path('spoolrail.php'));
+});
+
 test('loads the built-in RabbitMQ connection template', function (): void {
     $connection = config('spoolrail.connections.rabbitmq');
 

@@ -52,6 +52,14 @@
         ],
         "analyse": "phpstan --memory-limit=1G",
         "refactor": "rector",
+        "mutate": [
+            "Composer\\Config::disableProcessTimeout",
+            "pest --mutate --everything --covered-only"
+        ],
+        "mutate:herd": [
+            "Composer\\Config::disableProcessTimeout",
+            "herd coverage ./vendor/bin/pest --mutate --everything --covered-only"
+        ],
         "coverage": "pest --coverage",
         "coverage:herd": "herd coverage ./vendor/bin/pest --coverage"
     },

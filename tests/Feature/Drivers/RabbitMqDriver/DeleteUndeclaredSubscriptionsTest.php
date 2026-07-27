@@ -30,7 +30,7 @@ test('deletes only undeclared subscriptions from an explicitly selected RabbitMQ
     $declared = "$prefix-rabbit-orders";
     $undeclared = "$prefix-old-orders";
 
-    Spoolrail::subscribe('orders', 'local-orders', RecordingMessageHandler::class);
+    Spoolrail::subscribe('orders', 'old-orders', RecordingMessageHandler::class);
     Spoolrail::subscribe('orders', 'rabbit-orders', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
     $this->artisan('spoolrail:sync')->run();

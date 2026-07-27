@@ -151,7 +151,7 @@ test('leaves queued handler failures to Laravel Queue without redelivering the s
     $this->artisan('spoolrail:consume worker-failure')->run();
 
     foreach (range(1, 4) as $_) {
-        $this->artisan('queue:work database --once')->run();
+        $this->artisan('queue:work database --once --sleep=0')->run();
     }
 
     $this->artisan('spoolrail:consume worker-failure')->run();

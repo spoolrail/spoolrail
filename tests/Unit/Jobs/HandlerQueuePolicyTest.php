@@ -43,6 +43,7 @@ test('uses property fallbacks and the retry deadline method', function (): void 
     // --- Assert ---
     expect($job->tries)->toBe(3);
     expect($job->backoff)->toBe([5, 10]);
+    expect($job->failOnTimeout)->toBeFalse();
     expect($job->retryUntil?->getTimestamp())->toBe(
         CarbonImmutable::parse('2030-02-03 04:05:06 UTC')->getTimestamp(),
     );

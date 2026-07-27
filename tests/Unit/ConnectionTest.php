@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
 use Spoolrail\Spoolrail\Connection;
+use Spoolrail\Spoolrail\Contracts\ClosableDriver;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Exceptions\InvalidTopicException;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
@@ -12,6 +13,30 @@ use Spoolrail\Spoolrail\MessageSerializer;
 
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
+});
+
+test('closes a driver that owns external resources', function (): void {
+    // --- Arrange ---
+    $driver = new class implements ClosableDriver, Driver
+    {
+        public bool $closed = false;
+
+        public function publish(string $topic, string $body): void {}
+
+        public function consume(string $subscription, Closure $handoff): void {}
+
+        public function close(): void
+        {
+            $this->closed = true;
+        }
+    };
+    $connection = new Connection($driver, new MessageSerializer);
+
+    // --- Act ---
+    $connection->close();
+
+    // --- Assert ---
+    expect($driver->closed)->toBeTrue();
 });
 
 test('publishes a normalized message envelope through the raw driver', function (): void {
