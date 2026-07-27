@@ -2,6 +2,7 @@
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
+         defaultTestSuite="Default"
          colors="true"
          cacheDirectory=".phpunit.cache"
          executionOrder="random"
@@ -10,19 +11,27 @@
          failOnEmptyTestSuite="false"
          beStrictAboutOutputDuringTests="true">
     <testsuites>
-        <testsuite name="Feature">
-            <directory>./tests/Feature</directory>
-        </testsuite>
-        <testsuite name="Unit">
-            <directory>./tests/Unit</directory>
+        <testsuite name="Default">
+            <directory>tests/Feature</directory>
+            <directory>tests/Unit</directory>
+            <file>tests/ArchTest.php</file>
         </testsuite>
         <testsuite name="External">
-            <directory>./tests/External</directory>
+            <directory>tests/External</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Arch">
+            <file>tests/ArchTest.php</file>
         </testsuite>
     </testsuites>
     <source>
         <include>
-            <directory suffix=".php">./src</directory>
+            <directory suffix=".php">src</directory>
         </include>
     </source>
     <php>

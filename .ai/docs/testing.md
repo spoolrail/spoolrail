@@ -10,6 +10,7 @@
 - `tests/Feature`: default. Test package behavior from the documented public API inward, asserting only externally observable outcomes. Group files by public capability rather than production namespace, and split a capability only when a supported variant requires distinct scenarios. Test internal machinery in `Unit`.
 - `tests/Unit`: tests for individual classes, mirroring `src/` namespaces. Strict isolation NOT required.
 - `tests/External`: tests against real services that are not part of the repository-managed ordinary test environment, organized by provider—for example, credentialed remote APIs.
+- `tests/ArchTest.php`: package-wide architectural constraints. Protect durable design boundaries without encoding incidental implementation structure.
 
 ## Test Support
 
