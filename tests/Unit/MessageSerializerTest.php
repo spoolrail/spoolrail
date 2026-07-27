@@ -79,9 +79,14 @@ test('rejects JSON values that are not object envelopes', function (string $json
     'scalar' => 'null',
 ]);
 
+test('rejects malformed JSON', function (): void {
+    expect(fn (): Message => (new MessageSerializer)->deserialize(''))
+        ->toThrow(JsonException::class);
+});
+
 test('rejects wire envelopes missing a required field', function (string $field): void {
     $serializer = new MessageSerializer;
-    $json = messageSerializerEnvelope(missing: $field);
+    $json = createMessageEnvelopeJson(missing: $field);
 
     expect(fn (): Message => $serializer->deserialize($json))
         ->toThrow(InvalidMessageEnvelopeException::class);
@@ -94,7 +99,7 @@ test('rejects wire envelopes missing a required field', function (string $field)
 
 test('rejects message IDs that are not UUIDv7', function (string $id): void {
     $serializer = new MessageSerializer;
-    $json = messageSerializerEnvelope(['id' => $id]);
+    $json = createMessageEnvelopeJson(['id' => $id]);
 
     expect(fn (): Message => $serializer->deserialize($json))
         ->toThrow(
@@ -108,7 +113,7 @@ test('rejects message IDs that are not UUIDv7', function (string $id): void {
 
 test('rejects invalid message types', function (mixed $type): void {
     $serializer = new MessageSerializer;
-    $json = messageSerializerEnvelope(['type' => $type]);
+    $json = createMessageEnvelopeJson(['type' => $type]);
 
     expect(fn (): Message => $serializer->deserialize($json))
         ->toThrow(
@@ -122,7 +127,7 @@ test('rejects invalid message types', function (mixed $type): void {
 
 test('rejects payloads that are not arrays', function (): void {
     $serializer = new MessageSerializer;
-    $json = messageSerializerEnvelope(['payload' => 'not-an-array']);
+    $json = createMessageEnvelopeJson(['payload' => 'not-an-array']);
 
     expect(fn (): Message => $serializer->deserialize($json))
         ->toThrow(
@@ -133,7 +138,7 @@ test('rejects payloads that are not arrays', function (): void {
 
 test('rejects non-canonical publication timestamps', function (string $publishedAt): void {
     $serializer = new MessageSerializer;
-    $json = messageSerializerEnvelope(['published_at' => $publishedAt]);
+    $json = createMessageEnvelopeJson(['published_at' => $publishedAt]);
 
     expect(fn (): Message => $serializer->deserialize($json))
         ->toThrow(
@@ -152,7 +157,7 @@ test('rejects non-canonical publication timestamps', function (string $published
  *
  * @throws JsonException
  */
-function messageSerializerEnvelope(array $overrides = [], ?string $missing = null): string
+function createMessageEnvelopeJson(array $overrides = [], ?string $missing = null): string
 {
     $envelope = array_replace([
         'id' => '01890a5d-ac96-774b-bcd0-48f622f3e798',

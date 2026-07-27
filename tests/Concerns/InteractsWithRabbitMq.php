@@ -28,11 +28,11 @@ trait InteractsWithRabbitMq
 
     protected function tearDownInteractsWithRabbitMq(): void
     {
-        $this->disconnectSpoolrail();
+        $this->disconnectFromRabbitMq();
         $this->deleteIsolatedVhost();
     }
 
-    protected function useQuorumQueues(): void
+    protected function defaultToQuorumQueues(): void
     {
         $this->rabbitMqManagement
             ->put("/api/vhosts/$this->rabbitMqVhost", [
@@ -50,9 +50,57 @@ trait InteractsWithRabbitMq
     protected function rabbitMqQueue(string $queue): array
     {
         return $this->rabbitMqManagement
-            ->get("/api/queues/$this->rabbitMqVhost/$queue")
+            ->get($this->rabbitMqResourcePath('queues', $queue))
             ->throw()
             ->json();
+    }
+
+    protected function rabbitMqQueueExists(string $queue): bool
+    {
+        return $this->rabbitMqManagement
+            ->get($this->rabbitMqResourcePath('queues', $queue))
+            ->successful();
+    }
+
+    protected function rabbitMqExchangeExists(string $exchange): bool
+    {
+        return $this->rabbitMqManagement
+            ->get($this->rabbitMqResourcePath('exchanges', $exchange))
+            ->successful();
+    }
+
+    protected function declareRabbitMqQueue(string $queue): void
+    {
+        $this->rabbitMqManagement
+            ->put($this->rabbitMqResourcePath('queues', $queue), [
+                'durable' => true,
+                'auto_delete' => false,
+                'arguments' => (object) [],
+            ])
+            ->throw();
+    }
+
+    protected function declareRabbitMqExchange(
+        string $exchange,
+        string $type = 'fanout',
+    ): void {
+        $this->rabbitMqManagement
+            ->put($this->rabbitMqResourcePath('exchanges', $exchange), [
+                'type' => $type,
+                'durable' => true,
+                'auto_delete' => false,
+                'internal' => false,
+                'arguments' => (object) [],
+            ])
+            ->throw();
+    }
+
+    protected function addRabbitMqConnection(string $name): void
+    {
+        config()->set(
+            "spoolrail.connections.$name",
+            config('spoolrail.connections.rabbitmq'),
+        );
     }
 
     /**
@@ -65,7 +113,7 @@ trait InteractsWithRabbitMq
     {
         return $this->rabbitMqManagement
             ->post(
-                "/api/queues/$this->rabbitMqVhost/$queue/get",
+                $this->rabbitMqResourcePath('queues', $queue).'/get',
                 [
                     'count' => $count,
                     'ackmode' => 'ack_requeue_false',
@@ -126,7 +174,12 @@ trait InteractsWithRabbitMq
         config()->set('spoolrail.connections.rabbitmq.vhost', $this->rabbitMqVhost);
     }
 
-    private function disconnectSpoolrail(): void
+    private function rabbitMqResourcePath(string $resource, string $name): string
+    {
+        return '/api/'.$resource.'/'.rawurlencode($this->rabbitMqVhost).'/'.rawurlencode($name);
+    }
+
+    private function disconnectFromRabbitMq(): void
     {
         app(SpoolrailManager::class)->forgetConnection('rabbitmq');
     }

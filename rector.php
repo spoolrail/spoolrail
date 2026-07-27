@@ -22,7 +22,6 @@ return RectorConfig::configure()
         'ray',
     ])
     ->withSkip([
-        __DIR__.'/tests/Fixtures/application/bootstrap/cache',
         ReadOnlyPropertyRector::class,
         RemoveAlwaysTrueIfConditionRector::class,
         RemoveNullArgOnNullDefaultParamRector::class,

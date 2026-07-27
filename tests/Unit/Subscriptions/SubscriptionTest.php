@@ -5,11 +5,11 @@ declare(strict_types=1);
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
-use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 test('rejects blank subscription settings', function (Closure $configure, string $message): void {
     $subscription = (new SubscriptionRegistry)
-        ->subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
+        ->subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
 
     expect(fn () => $configure($subscription))
         ->toThrow(InvalidSubscriptionException::class, $message);

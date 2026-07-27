@@ -28,7 +28,10 @@ test('loads the built-in RabbitMQ connection template', function (): void {
 
 test('loads application subscription routes when booted without resolving a broker connection', function (): void {
     // --- Arrange ---
-    app()->setBasePath(__DIR__.'/../Fixtures/application');
+    $bootstrapPath = app()->bootstrapPath();
+    app()
+        ->setBasePath(__DIR__.'/../Fixtures/application')
+        ->useBootstrapPath($bootstrapPath);
 
     Spoolrail::extend(
         'array',

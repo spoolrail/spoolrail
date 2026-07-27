@@ -7,7 +7,7 @@ use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageSerializer;
 use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
-use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 uses(InteractsWithRabbitMq::class);
 
@@ -20,9 +20,9 @@ test('publishes through the next available RabbitMQ host to every subscription',
     $connection['connection_timeout'] = 1;
     config()->set('spoolrail.connections.rabbitmq', $connection);
 
-    Spoolrail::subscribe('orders', 'warehouse', NoopMessageHandler::class)
+    Spoolrail::subscribe('orders', 'warehouse', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
-    Spoolrail::subscribe('orders', 'analytics', NoopMessageHandler::class)
+    Spoolrail::subscribe('orders', 'analytics', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
     $this->artisan('spoolrail:sync')->run();
 

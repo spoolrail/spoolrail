@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
-use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 /**
  * @param  array<string, array{mixed, int}>  $responses
@@ -51,7 +52,7 @@ function rabbitMqSubscription(string $topic = 'orders', string $name = 'warehous
     return new Subscription(
         $topic,
         $name,
-        NoopMessageHandler::class,
+        RecordingMessageHandler::class,
         static function (): void {},
     );
 }
@@ -158,6 +159,25 @@ test('rejects an unsupported broker before planning any mutations', function ():
     );
 });
 
+test('rejects broker metadata without a version before planning any mutations', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET overview' => [[], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(
+        RabbitMqManagementException::class,
+        'RabbitMQ connection [events] Management API returned an invalid response while reading the broker version.',
+    );
+    $http->assertNotSent(
+        static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+});
+
 test('rejects an existing transient queue', function (): void {
     // --- Arrange ---
     [$topology] = rabbitMqTopology([
@@ -181,6 +201,31 @@ test('rejects an existing transient queue', function (): void {
 
     // --- Assert ---
     expect($action)->toThrow(RabbitMqTopologyException::class, '[durable] must be true');
+});
+
+test('rejects an existing queue with an unsupported type', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => 'stream',
+            'durable' => true,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => [],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(RabbitMqTopologyException::class, 'queue type must be classic or quorum');
 });
 
 test('rejects a wrong or additional queue binding', function (array $bindings): void {
@@ -290,6 +335,20 @@ test('accepts an existing quorum queue with an unlimited regular policy', functi
     // --- Assert ---
     $http->assertNotSent(
         static fn (Request $request): bool => $request->method() !== 'GET',
+    );
+});
+
+test('rejects an existing quorum queue without a verifiable unlimited delivery limit', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(compatibleQuorumTopologyResponses());
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(
+        RabbitMqTopologyException::class,
+        'RabbitMQ quorum queue [application-a-warehouse] does not have a verifiable unlimited delivery limit.',
     );
 });
 
@@ -456,6 +515,61 @@ test('rejects conflicting equal-priority policy winners', function (): void {
 
     // --- Assert ---
     expect($action)->toThrow(RabbitMqTopologyException::class, 'finite delivery limit of 20');
+});
+
+test('rejects a matching policy whose regular expression cannot be evaluated', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology(array_replace(compatibleQuorumTopologyResponses([
+        'x-delivery-limit' => -1,
+    ]), [
+        'GET policies/%2F' => [[
+            [
+                'name' => 'malformed',
+                'pattern' => '[',
+                'apply-to' => 'quorum_queues',
+                'priority' => 10,
+                'definition' => ['delivery-limit' => -1],
+            ],
+        ], 200],
+    ]));
+
+    // --- Act ---
+    $action = fn () => $topology->planSync([rabbitMqSubscription()], 'application-a');
+
+    // --- Assert ---
+    expect($action)->toThrow(
+        RabbitMqTopologyException::class,
+        'RabbitMQ policy [malformed] cannot be evaluated safely.',
+    );
+});
+
+test('creates a missing binding for an otherwise compatible existing queue', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET exchanges/%2F/orders' => [[
+            'type' => 'fanout',
+            'durable' => true,
+            'auto_delete' => false,
+            'internal' => false,
+        ], 200],
+        'GET queues/%2F/application-a-warehouse' => [[
+            'type' => 'classic',
+            'durable' => true,
+            'exclusive' => false,
+            'auto_delete' => false,
+            'arguments' => [],
+        ], 200],
+        'GET queues/%2F/application-a-warehouse/bindings' => [[], 200],
+    ]);
+
+    // --- Act ---
+    $topology->planSync([rabbitMqSubscription()], 'application-a')->apply();
+
+    // --- Assert ---
+    $http->assertSent(
+        static fn (Request $request): bool => $request->method() === 'POST'
+            && str_ends_with($request->url(), '/api/bindings/%2F/e/orders/q/application-a-warehouse'),
+    );
 });
 
 test('shares one topic exchange while keeping application queue namespaces distinct', function (): void {

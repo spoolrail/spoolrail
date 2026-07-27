@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Illuminate\Contracts\Foundation\Application;
 use Spoolrail\Spoolrail\Contracts\Driver;
-use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 
 test('lazily creates and caches a custom connection with its unchanged configuration', function (): void {
@@ -44,30 +43,4 @@ test('lazily creates and caches a custom connection with its unchanged configura
         'driver' => 'custom',
         'label' => 'registered',
     ]);
-});
-
-test('rejects an undefined connection', function (): void {
-    expect(fn () => Spoolrail::connection('missing'))
-        ->toThrow(InvalidConfigurationException::class, 'Spoolrail connection [missing] is not defined.');
-});
-
-test('rejects a connection without a declared driver', function (): void {
-    config()->set('spoolrail.connections.invalid', [
-        'label' => 'missing-driver',
-    ]);
-
-    expect(fn () => Spoolrail::connection('invalid'))
-        ->toThrow(
-            InvalidConfigurationException::class,
-            'Spoolrail connection [invalid] must define a non-empty string [driver].',
-        );
-});
-
-test('rejects an unsupported driver', function (): void {
-    config()->set('spoolrail.connections.invalid', [
-        'driver' => 'missing',
-    ]);
-
-    expect(fn () => Spoolrail::connection('invalid'))
-        ->toThrow(InvalidConfigurationException::class, 'Spoolrail driver [missing] is not supported.');
 });

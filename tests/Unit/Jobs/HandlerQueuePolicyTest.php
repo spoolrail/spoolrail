@@ -12,8 +12,11 @@ use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\Tests\Fixtures\HandlerQueuePolicyAttributedParent;
-use Spoolrail\Spoolrail\Tests\Fixtures\HandlerQueuePolicyTimeout;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
+
+beforeEach(function (): void {
+    RecordingMessageHandler::reset();
+});
 
 test('uses property fallbacks and the retry deadline method', function (): void {
     // --- Arrange ---
@@ -155,7 +158,7 @@ test('uses methods before attributes', function (): void {
 
 test('uses a child public property before an inherited attribute', function (): void {
     // --- Arrange ---
-    $handler = new class extends HandlerQueuePolicyAttributedParent
+    $handler = new class extends RecordingMessageHandler
     {
         public int $maxExceptions = 8;
     };
@@ -171,19 +174,11 @@ test('uses a child public property before an inherited attribute', function (): 
 
 test('uses an attribute declared by the handler trait before its default property', function (): void {
     // --- Arrange ---
-    $handler = new class implements MessageHandler
-    {
-        use HandlerQueuePolicyTimeout;
-
-        public int $timeout = 30;
-
-        public function handle(Message $message): void {}
-    };
     $message = Message::make('order.created', []);
     $job = new HandleMessageJob($message, 'trait-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply(RecordingMessageHandler::class, $message, $job);
 
     // --- Assert ---
     expect($job->timeout)->toBe(75);

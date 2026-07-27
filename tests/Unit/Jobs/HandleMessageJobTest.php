@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Mockery\MockInterface;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
@@ -16,7 +17,7 @@ test('uses the handler currently registered for its subscription when executed',
     $job = new HandleMessageJob($message, 'warehouse-orders');
 
     $handled = null;
-    $currentHandler = Mockery::namedMock('HandleMessageJobCurrentHandler', MessageHandler::class);
+    $currentHandler = createNamedMessageHandlerMock('HandleMessageJobCurrentHandler');
     $currentHandler->shouldReceive('handle')
         ->once()
         ->andReturnUsing(function (Message $message) use (&$handled): void {
@@ -24,7 +25,7 @@ test('uses the handler currently registered for its subscription when executed',
         });
     app()->instance($currentHandler::class, $currentHandler);
 
-    $decoyHandler = Mockery::namedMock('HandleMessageJobDecoyHandler', MessageHandler::class);
+    $decoyHandler = createNamedMessageHandlerMock('HandleMessageJobDecoyHandler');
     $decoyHandler->allows('handle');
     app()->instance($decoyHandler::class, $decoyHandler);
 
@@ -50,3 +51,11 @@ test('fails when its subscription is no longer registered at execution', functio
     expect(fn () => $job->handle($subscriptions, app()))
         ->toThrow(InvalidSubscriptionException::class);
 });
+
+function createNamedMessageHandlerMock(string $name): MessageHandler&MockInterface
+{
+    /** @var MessageHandler&MockInterface $handler */
+    $handler = Mockery::namedMock($name, MessageHandler::class);
+
+    return $handler;
+}

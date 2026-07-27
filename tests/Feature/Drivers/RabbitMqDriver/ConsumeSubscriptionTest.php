@@ -7,7 +7,7 @@ use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageSerializer;
 use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
-use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 uses(InteractsWithRabbitMq::class);
 
@@ -17,7 +17,7 @@ test('returns every unsettled prefetched RabbitMQ delivery after a failed handof
 
     config()->set('spoolrail.connections.rabbitmq.prefetch', 3);
 
-    Spoolrail::subscribe('orders', 'warehouse', NoopMessageHandler::class)
+    Spoolrail::subscribe('orders', 'warehouse', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
     $this->artisan('spoolrail:sync')->run();
 

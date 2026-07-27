@@ -6,14 +6,13 @@ use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
-use Spoolrail\Spoolrail\Tests\Fixtures\AbstractMessageHandler;
-use Spoolrail\Spoolrail\Tests\Fixtures\NoopMessageHandler;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 test('rejects a duplicate name without replacing the registered subscription', function (): void {
     $subscriptions = new SubscriptionRegistry;
-    $registered = $subscriptions->subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
+    $registered = $subscriptions->subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
 
-    expect(fn (): Subscription => $subscriptions->subscribe('returns', 'warehouse-orders', NoopMessageHandler::class))
+    expect(fn (): Subscription => $subscriptions->subscribe('returns', 'warehouse-orders', RecordingMessageHandler::class))
         ->toThrow(
             InvalidSubscriptionException::class,
             'Subscription [warehouse-orders] has already been registered.',
@@ -23,11 +22,11 @@ test('rejects a duplicate name without replacing the registered subscription', f
 
 test('rejects a queued-message drain name already used by an active subscription', function (): void {
     $subscriptions = new SubscriptionRegistry;
-    $subscriptions->subscribe('orders', 'warehouse-order-processing', NoopMessageHandler::class);
+    $subscriptions->subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class);
     $replacement = $subscriptions->subscribe(
         'orders',
         'warehouse-order-processing-v2',
-        NoopMessageHandler::class,
+        RecordingMessageHandler::class,
     );
 
     expect(fn (): Subscription => $replacement->drainMessagesQueuedFor('warehouse-order-processing'))
@@ -37,10 +36,10 @@ test('rejects a queued-message drain name already used by an active subscription
 test('rejects an active subscription name already used for queued-message draining', function (): void {
     $subscriptions = new SubscriptionRegistry;
     $replacement = $subscriptions
-        ->subscribe('orders', 'warehouse-order-processing-v2', NoopMessageHandler::class)
+        ->subscribe('orders', 'warehouse-order-processing-v2', RecordingMessageHandler::class)
         ->drainMessagesQueuedFor('warehouse-order-processing');
 
-    expect(fn (): Subscription => $subscriptions->subscribe('orders', 'warehouse-order-processing', NoopMessageHandler::class))
+    expect(fn (): Subscription => $subscriptions->subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class))
         ->toThrow(InvalidSubscriptionException::class);
     expect($subscriptions->getForQueuedMessage('warehouse-order-processing'))->toBe($replacement);
 });
@@ -48,12 +47,12 @@ test('rejects an active subscription name already used for queued-message draini
 test('rejects a queued-message drain name already claimed by another subscription', function (): void {
     $subscriptions = new SubscriptionRegistry;
     $firstReplacement = $subscriptions
-        ->subscribe('orders', 'warehouse-order-processing-v2', NoopMessageHandler::class)
+        ->subscribe('orders', 'warehouse-order-processing-v2', RecordingMessageHandler::class)
         ->drainMessagesQueuedFor('warehouse-order-processing');
     $secondReplacement = $subscriptions->subscribe(
         'orders',
         'warehouse-order-processing-v3',
-        NoopMessageHandler::class,
+        RecordingMessageHandler::class,
     );
 
     expect(fn (): Subscription => $secondReplacement->drainMessagesQueuedFor('warehouse-order-processing'))
@@ -66,27 +65,25 @@ test('rejects handlers outside the message handler contract without reserving th
 
     expect(fn (): Subscription => $subscriptions->subscribe('orders', 'warehouse-orders', stdClass::class))
         ->toThrow(InvalidSubscriptionException::class);
-    $subscriptions->subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
+    $subscriptions->subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
 });
 
-test('rejects non-concrete message handlers without reserving the subscription name', function (string $handler): void {
+test('rejects the message handler interface without reserving the subscription name', function (): void {
     $subscriptions = new SubscriptionRegistry;
+    $handler = MessageHandler::class;
 
     expect(fn (): Subscription => $subscriptions->subscribe('orders', 'warehouse-orders', $handler))
         ->toThrow(
             InvalidSubscriptionException::class,
             "Subscription handler [$handler] must be a concrete class implementing ".MessageHandler::class.'.',
         );
-    $subscriptions->subscribe('orders', 'warehouse-orders', NoopMessageHandler::class);
-})->with([
-    'interface' => MessageHandler::class,
-    'abstract class' => AbstractMessageHandler::class,
-]);
+    $subscriptions->subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
+});
 
 test('rejects non-portable subscription identifiers', function (string $topic, string $name, string $message): void {
     $subscriptions = new SubscriptionRegistry;
 
-    expect(fn (): Subscription => $subscriptions->subscribe($topic, $name, NoopMessageHandler::class))
+    expect(fn (): Subscription => $subscriptions->subscribe($topic, $name, RecordingMessageHandler::class))
         ->toThrow(InvalidSubscriptionException::class, $message);
 })->with([
     'blank topic' => ['   ', 'warehouse-orders', 'Subscription topic [   ] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.'],

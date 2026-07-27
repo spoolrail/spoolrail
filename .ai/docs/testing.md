@@ -3,17 +3,18 @@
 ## Approach
 
 - Use Pest + Orchestra Testbench, and keep the test namespace aligned with Composer `autoload-dev`.
-- Start tests from the package's normally loaded configuration and Testbench defaults. Put suite-wide environment values in `phpunit.xml.dist`; keep per-test overrides to values material to the scenario instead of reconstructing configuration registries as routine setup.
+- Start tests from the package's normally loaded configuration and Testbench defaults. Put suite-wide environment defaults in `phpunit.xml.dist`; keep per-test overrides to values material to the scenario instead of reconstructing configuration registries as routine setup.
 
 ## Test Suites
 
-- `tests/Feature`: default. Test package behavior from the documented public API inward, asserting only externally observable outcomes. Test internal machinery in `Unit`.
+- `tests/Feature`: default. Test package behavior from the documented public API inward, asserting only externally observable outcomes. Group files by public capability rather than production namespace, and split a capability only when a supported variant requires distinct scenarios. Test internal machinery in `Unit`.
 - `tests/Unit`: tests for individual classes, mirroring `src/` namespaces. Strict isolation NOT required.
 - `tests/External`: tests against real services that are not part of the repository-managed ordinary test environment, organized by provider—for example, credentialed remote APIs.
 
-## Fixtures
+## Test Support
 
-Place fixture classes and files in `tests/Fixtures`.
+- Place fixture classes and files in `tests/Fixtures`.
+- Place reusable infrastructure setup and inspection helpers in `tests/Concerns`.
 
 ## File Naming
 
