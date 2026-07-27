@@ -16,10 +16,9 @@ test('interprets the complete RabbitMQ connection configuration', function (): v
         'vhost' => 'orders/production',
         'ca_file' => __FILE__,
         'connection_timeout' => '7',
-        'heartbeat' => '0',
         'publisher_confirm_timeout' => '17',
+        'heartbeat' => '0',
         'prefetch' => '65535',
-        'consumer_ack_timeout' => '30',
         'management' => [
             'url' => 'https://rabbit.internal:15671/api/',
             'username' => 'topology',
@@ -41,7 +40,6 @@ test('interprets the complete RabbitMQ connection configuration', function (): v
     expect($config->heartbeat())->toBe(0);
     expect($config->publisherConfirmTimeout())->toBe(17);
     expect($config->prefetch())->toBe(65_535);
-    expect($config->consumerAcknowledgementTimeoutMilliseconds())->toBe(30_000);
     expect($management->url)->toBe('https://rabbit.internal:15671/api');
     expect($management->username)->toBe('topology');
     expect($management->password)->toBe('secret');
@@ -65,7 +63,6 @@ test('applies RabbitMQ local defaults and keeps management TLS trust independent
     expect($config->heartbeat())->toBe(60);
     expect($config->publisherConfirmTimeout())->toBe(60);
     expect($config->prefetch())->toBe(10);
-    expect($config->consumerAcknowledgementTimeoutMilliseconds())->toBeNull();
     expect($management->url)->toBe('http://127.0.0.1:15672');
     expect($management->username)->toBe('guest');
     expect($management->password)->toBe('guest');

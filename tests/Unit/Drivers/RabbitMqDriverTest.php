@@ -9,7 +9,6 @@ use PhpAmqpLib\Exception\AMQPHeartbeatMissedException;
 use PhpAmqpLib\Exception\AMQPIOException;
 use PhpAmqpLib\Exception\AMQPTimeoutException;
 use PhpAmqpLib\Message\AMQPMessage;
-use PhpAmqpLib\Wire\AMQPTable;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidPhysicalNameException;
@@ -52,7 +51,9 @@ test('propagates a confirmation timeout, discards the uncertain connection, and 
     $factory = Mockery::mock(RabbitMqConnectionFactory::class);
 
     $native->expects('channel')->once()->andReturn($channel);
-    $native->expects('close')->once();
+    $native->expects('close')
+        ->once()
+        ->andThrow(new RuntimeException('Closing the uncertain connection failed.'));
     $factory->expects('create')->once()->andReturn($native);
     $channel->allows('confirm_select');
     $channel->allows('set_nack_handler');
@@ -215,13 +216,10 @@ test('acknowledges a delivery only after the handoff returns', function (): void
             bool $exclusive,
             bool $noWait,
             Closure $callback,
-            mixed $ticket,
-            AMQPTable $arguments,
         ) use ($channel, $expectedQueue): bool {
             expect($queue)->toBe($expectedQueue);
             expect($noAck)->toBeFalse();
             expect($exclusive)->toBeFalse();
-            expect($arguments->getNativeData())->toBe(['x-consumer-timeout' => 45_000]);
 
             $delivery = new AMQPMessage('message body');
             $delivery->setChannel($channel);
@@ -238,11 +236,7 @@ test('acknowledges a delivery only after the handoff returns', function (): void
         });
     $channel->expects('consume')->once();
 
-    $driver = rabbitMqDriver(
-        $factory,
-        prefetch: 23,
-        consumerAcknowledgementTimeout: 45,
-    );
+    $driver = rabbitMqDriver($factory, prefetch: 23);
 
     // --- Act ---
     try {
@@ -255,48 +249,6 @@ test('acknowledges a delivery only after the handoff returns', function (): void
 
     // --- Assert ---
     expect($events)->toBe(['handoff', 'ack']);
-});
-
-test('omits the consumer acknowledgement timeout argument when it is not configured', function (): void {
-    // --- Arrange ---
-    $arguments = null;
-    $channel = Mockery::mock(AMQPChannel::class);
-    $native = Mockery::mock(AbstractConnection::class);
-    $factory = Mockery::mock(RabbitMqConnectionFactory::class);
-
-    $native->expects('channel')->once()->andReturn($channel);
-    $native->expects('close')->once();
-    $factory->expects('create')->once()->andReturn($native);
-    $channel->allows('basic_qos');
-    $channel->expects('basic_consume')
-        ->once()
-        ->andReturnUsing(function (
-            mixed $_queue,
-            mixed $_consumerTag,
-            mixed $_noLocal,
-            mixed $_noAck,
-            mixed $_exclusive,
-            mixed $_noWait,
-            mixed $_callback,
-            mixed $_ticket,
-            AMQPTable $consumerArguments,
-        ) use (&$arguments): string {
-            $arguments = $consumerArguments->getNativeData();
-
-            return 'consumer';
-        });
-    $channel->expects('consume')->once();
-
-    $driver = rabbitMqDriver($factory);
-
-    // --- Act ---
-    try {
-        $driver->consume('order-imports', static function (): void {});
-    } catch (RabbitMqConsumerCancelledException) {
-    }
-
-    // --- Assert ---
-    expect($arguments)->toBe([]);
 });
 
 test('propagates consumer transport failures and discards the connection', function (Throwable $failure): void {
@@ -400,16 +352,11 @@ function rabbitMqDriver(
     RabbitMqConnectionFactory $factory,
     int $publisherConfirmTimeout = 60,
     int $prefetch = 10,
-    ?int $consumerAcknowledgementTimeout = null,
 ): RabbitMqDriver {
     $configuration = [
         'publisher_confirm_timeout' => $publisherConfirmTimeout,
         'prefetch' => $prefetch,
     ];
-
-    if ($consumerAcknowledgementTimeout !== null) {
-        $configuration['consumer_ack_timeout'] = $consumerAcknowledgementTimeout;
-    }
 
     return new RabbitMqDriver(
         new RabbitMqConnectionConfig('rabbitmq', $configuration),

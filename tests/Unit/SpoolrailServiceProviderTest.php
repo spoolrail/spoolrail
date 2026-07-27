@@ -18,7 +18,6 @@ test('loads the built-in RabbitMQ connection template', function (): void {
     expect($connection['ca_file'])->toBeNull();
     expect($connection['connection_timeout'])->toBe(3);
     expect($connection['publisher_confirm_timeout'])->toBe(60);
-    expect($connection['consumer_ack_timeout'])->toBeNull();
     expect($connection['prefetch'])->toBe(10);
     expect($connection['management']['url'])->toBe('http://127.0.0.1:15672');
     expect($connection['management']['username'])->toBe('spoolrail');

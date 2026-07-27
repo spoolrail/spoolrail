@@ -11,20 +11,22 @@ return [
     | Default Spoolrail Connection
     |--------------------------------------------------------------------------
     |
-    | This connection is used whenever none is selected explicitly. Its name
-    | must match one of the connections defined below.
+    | Spoolrail supports multiple message transports through a single, unified
+    | interface. The default connection below is used unless another connection
+    | is explicitly selected when publishing or consuming messages.
     |
     */
 
-    'default' => env('SPOOLRAIL_CONNECTION', 'array'),
+    'default' => env('SPOOLRAIL_CONNECTION', 'rabbitmq'),
 
     /*
     |--------------------------------------------------------------------------
     | Receive-Side Ownership Prefix
     |--------------------------------------------------------------------------
     |
-    | Set an explicit prefix to keep the resource namespace stable across
-    | application or environment renames.
+    | This prefix namespaces receive-side resources owned by this application.
+    | Set it explicitly when resource names must remain stable across application
+    | or environment renames.
     |
     */
 
@@ -38,8 +40,10 @@ return [
     | Spoolrail Connections
     |--------------------------------------------------------------------------
     |
-    | Each connection must declare a driver. Additional options are passed to
-    | custom driver factories unchanged.
+    | Here you may configure every Spoolrail connection used by your application.
+    | The in-process "array" driver is intended for tests and local simulation.
+    |
+    | Supported drivers: "array", "rabbitmq"
     |
     */
 
@@ -52,21 +56,16 @@ return [
         'rabbitmq' => [
             'driver' => 'rabbitmq',
             'scheme' => env('RABBITMQ_SCHEME', 'amqp'),
-
-            // Replace "host" with a "hosts" array of hostnames for a multi-host connection.
             'host' => env('RABBITMQ_HOST', '127.0.0.1'),
-
             'port' => env('RABBITMQ_PORT', 5672),
             'username' => env('RABBITMQ_USERNAME', 'guest'),
             'password' => env('RABBITMQ_PASSWORD', 'guest'),
             'vhost' => env('RABBITMQ_VHOST', '/'),
             'ca_file' => null,
             'connection_timeout' => 3,
-            'heartbeat' => 60,
             'publisher_confirm_timeout' => 60,
-            'consumer_ack_timeout' => null,
+            'heartbeat' => 60,
             'prefetch' => 10,
-
             'management' => [
                 'url' => env('RABBITMQ_MANAGEMENT_URL', 'http://127.0.0.1:15672'),
                 'username' => env('RABBITMQ_MANAGEMENT_USERNAME', env('RABBITMQ_USERNAME', 'guest')),

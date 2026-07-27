@@ -111,15 +111,6 @@ readonly class RabbitMqConnectionConfig
         return $this->integer('prefetch', 10);
     }
 
-    public function consumerAcknowledgementTimeoutMilliseconds(): ?int
-    {
-        $seconds = $this->configuration['consumer_ack_timeout'] ?? null;
-
-        return $seconds === null || $seconds === ''
-            ? null
-            : $this->integer('consumer_ack_timeout', 0) * 1_000;
-    }
-
     public function management(): RabbitMqManagementConfig
     {
         $configuration = Arr::array($this->configuration, 'management', []);

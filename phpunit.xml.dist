@@ -26,6 +26,7 @@
         </include>
     </source>
     <php>
+        <env name="SPOOLRAIL_CONNECTION" value="array"/>
         <env name="RABBITMQ_USERNAME" value="spoolrail"/>
         <env name="RABBITMQ_PASSWORD" value="spoolrail"/>
         <env name="RABBITMQ_VHOST" value="spoolrail"/>

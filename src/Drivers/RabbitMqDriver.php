@@ -8,7 +8,6 @@ use Closure;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Message\AMQPMessage;
-use PhpAmqpLib\Wire\AMQPTable;
 use Spoolrail\Spoolrail\Contracts\ClosableDriver;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
@@ -86,8 +85,6 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
                     $handoff($delivery->getBody());
                     $delivery->ack();
                 },
-                null,
-                $this->consumerArguments(),
             );
 
             $channel->consume();
@@ -155,15 +152,6 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
     private function nativeConnection(): AbstractConnection
     {
         return $this->nativeConnection ??= $this->connections->create($this->config);
-    }
-
-    private function consumerArguments(): AMQPTable
-    {
-        $timeout = $this->config->consumerAcknowledgementTimeoutMilliseconds();
-
-        return new AMQPTable($timeout === null ? [] : [
-            'x-consumer-timeout' => $timeout,
-        ]);
     }
 
     private function discardIdlePublisherConnection(): void
