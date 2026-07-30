@@ -77,21 +77,6 @@ class SubscriptionRegistry
         return array_values($this->subscriptions);
     }
 
-    /**
-     * @return list<Subscription>
-     */
-    public function forTopicOnConnection(
-        string $topic,
-        string $connectionName,
-        string $defaultConnectionName,
-    ): array {
-        return array_values(array_filter(
-            $this->subscriptions,
-            fn (Subscription $subscription): bool => $subscription->topic() === $topic
-                && $subscription->connectionName($defaultConnectionName) === $connectionName,
-        ));
-    }
-
     private function registerDrainTarget(string $formerName, string $activeName): void
     {
         if (isset($this->subscriptions[$formerName]) || isset($this->drainTargets[$formerName])) {

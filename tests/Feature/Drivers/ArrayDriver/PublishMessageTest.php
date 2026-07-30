@@ -14,6 +14,7 @@ test('publishes one independently hydrated delivery to every matching subscripti
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
     Spoolrail::subscribe('orders', 'analytics-orders', RecordingMessageHandler::class);
+    Spoolrail::subscribe('returns', 'warehouse-returns', RecordingMessageHandler::class);
 
     // --- Act ---
     $published = Spoolrail::publish(
@@ -22,6 +23,7 @@ test('publishes one independently hydrated delivery to every matching subscripti
     );
     $this->artisan('spoolrail:consume warehouse-orders')->run();
     $this->artisan('spoolrail:consume analytics-orders')->run();
+    $this->artisan('spoolrail:consume warehouse-returns')->run();
 
     // --- Assert ---
     expect(RecordingMessageHandler::$messages)->toEqual([$published, $published]);

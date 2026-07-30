@@ -6,6 +6,7 @@ namespace Spoolrail\Spoolrail\Drivers;
 
 use Closure;
 use Spoolrail\Spoolrail\Contracts\Driver;
+use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Throwable;
 
@@ -22,11 +23,7 @@ class ArrayDriver implements Driver
 
     public function publish(string $topic, string $body): void
     {
-        foreach ($this->subscriptions->forTopicOnConnection(
-            $topic,
-            $this->connectionName,
-            $this->defaultConnectionName,
-        ) as $subscription) {
+        foreach ($this->matchingSubscriptions($topic) as $subscription) {
             $this->deliveries[$subscription->name()][] = $body;
         }
     }
@@ -61,5 +58,17 @@ class ArrayDriver implements Driver
     private function release(string $subscription, string $body): void
     {
         array_unshift($this->deliveries[$subscription], $body);
+    }
+
+    /**
+     * @return list<Subscription>
+     */
+    private function matchingSubscriptions(string $topic): array
+    {
+        return array_values(array_filter(
+            $this->subscriptions->all(),
+            fn (Subscription $subscription): bool => $subscription->topic() === $topic
+                && $subscription->connectionName($this->defaultConnectionName) === $this->connectionName,
+        ));
     }
 }
