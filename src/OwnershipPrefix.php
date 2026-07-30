@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail;
 
 use Illuminate\Contracts\Config\Repository;
-use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 
 class OwnershipPrefix
 {
@@ -15,7 +15,7 @@ class OwnershipPrefix
         private readonly Repository $config,
     ) {}
 
-    public function value(): string
+    public function current(): string
     {
         return $this->validate($this->config->get('spoolrail.prefix'));
     }
@@ -23,7 +23,7 @@ class OwnershipPrefix
     public function validate(mixed $prefix): string
     {
         if (! is_string($prefix) || preg_match(self::PATTERN, $prefix) !== 1) {
-            throw InvalidConfigurationException::invalidOwnershipPrefix();
+            throw InvalidConfigException::invalidOwnershipPrefix();
         }
 
         return $prefix;

@@ -26,12 +26,12 @@ readonly class SubscriptionConsumer
 
     public function consume(string $subscriptionName): void
     {
-        $subscription = $this->subscriptions->get($subscriptionName);
+        $subscription = $this->subscriptions->active($subscriptionName);
         $connection = $this->manager->connection(
-            $subscription->connection($this->manager->getDefaultConnection()),
+            $subscription->connectionName($this->manager->defaultConnectionName()),
         );
 
-        $queue = $this->queues->connection($subscription->queueConnection());
+        $queue = $this->queues->connection($subscription->queueConnectionName());
 
         $this->rejectTransactionalDatabaseQueue($queue);
 
@@ -48,12 +48,12 @@ readonly class SubscriptionConsumer
         $message = $this->serializer->deserialize($body);
         $job = new HandleMessageJob($message, $subscription->name());
 
-        $this->handlerQueuePolicy->apply($subscription->handler(), $message, $job);
+        $this->handlerQueuePolicy->capture($subscription->handlerClass(), $message, $job);
 
         $queue->push(
             $job,
             '',
-            $subscription->queue(),
+            $subscription->queueName(),
         );
     }
 

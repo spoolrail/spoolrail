@@ -17,7 +17,7 @@ beforeEach(function (): void {
     RecordingMessageHandler::reset();
 });
 
-test('captures handler policy and message-specific Laravel middleware without constructing the handler', function (): void {
+test('captures handler Queue policy and message-specific Laravel middleware without constructing the handler', function (): void {
     // --- Arrange ---
     $this->createJobsTable();
 
@@ -37,9 +37,9 @@ test('captures handler policy and message-specific Laravel middleware without co
     expect(RecordingMessageHandler::$constructions)->toBe(0);
 });
 
-test('redelivers when handler policy extraction fails during handoff', function (): void {
+test('redelivers when handler Queue policy capture fails during handoff', function (): void {
     // --- Arrange ---
-    RecordingMessageHandler::$policyFailuresRemaining = 1;
+    RecordingMessageHandler::$queuePolicyFailuresRemaining = 1;
 
     Spoolrail::subscribe('orders', 'failing-policy-orders', RecordingMessageHandler::class);
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
@@ -60,7 +60,7 @@ test('redelivers when handler policy extraction fails during handoff', function 
     expect(RecordingMessageHandler::$messages)->toEqual([$published]);
 });
 
-test('uses captured policy while resolving a replacement handler at execution', function (): void {
+test('uses captured Queue policy while resolving a replacement handler at execution', function (): void {
     // --- Arrange ---
     $this->createJobsTable();
 
@@ -74,7 +74,7 @@ test('uses captured policy while resolving a replacement handler at execution', 
         ->subscribe('orders', 'warehouse-orders-v2', RecordingMessageHandler::class)
         ->drainMessagesQueuedFor('warehouse-orders');
     app()->instance(SubscriptionRegistry::class, $deployedSubscriptions);
-    RecordingMessageHandler::$policyFailuresRemaining = 1;
+    RecordingMessageHandler::$queuePolicyFailuresRemaining = 1;
 
     // --- Act ---
     $jobAfterDeployment = readQueuedHandleMessageJob();
@@ -84,13 +84,13 @@ test('uses captured policy while resolving a replacement handler at execution', 
     expect($jobAfterDeployment->tries)->toBe(5);
     expect(RecordingMessageHandler::$messages)->toEqual([$published]);
     expect(RecordingMessageHandler::$constructions)->toBe(1);
-    expect(RecordingMessageHandler::$policyFailuresRemaining)->toBe(1);
+    expect(RecordingMessageHandler::$queuePolicyFailuresRemaining)->toBe(1);
 });
 
 function readQueuedHandleMessageJob(): HandleMessageJob
 {
     $payload = DB::connection('testing')->table('jobs')->value('payload');
-    $decoded = json_decode((string) $payload, true, flags: JSON_THROW_ON_ERROR);
+    $payloadData = json_decode((string) $payload, true, flags: JSON_THROW_ON_ERROR);
 
-    return unserialize($decoded['data']['command']);
+    return unserialize($payloadData['data']['command']);
 }

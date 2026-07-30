@@ -16,7 +16,7 @@ class SubscriptionRegistry
     private array $subscriptions = [];
 
     /** @var array<string, string> */
-    private array $queuedMessageSubscriptions = [];
+    private array $drainTargets = [];
 
     /**
      * @param  class-string  $handler
@@ -44,7 +44,7 @@ class SubscriptionRegistry
             throw InvalidSubscriptionException::invalidHandler($handler);
         }
 
-        if (isset($this->subscriptions[$name]) || isset($this->queuedMessageSubscriptions[$name])) {
+        if (isset($this->subscriptions[$name]) || isset($this->drainTargets[$name])) {
             throw InvalidSubscriptionException::duplicateName($name);
         }
 
@@ -52,21 +52,21 @@ class SubscriptionRegistry
             $topic,
             $name,
             $handler,
-            function (string $queuedFor) use ($name): void {
-                $this->registerQueuedMessageSubscription($queuedFor, $name);
+            function (string $formerName) use ($name): void {
+                $this->registerDrainTarget($formerName, $name);
             },
         );
     }
 
-    public function get(string $name): Subscription
+    public function active(string $name): Subscription
     {
         return $this->subscriptions[$name]
             ?? throw InvalidSubscriptionException::notRegistered($name);
     }
 
-    public function getForQueuedMessage(string $name): Subscription
+    public function resolveForQueuedMessage(string $name): Subscription
     {
-        return $this->get($this->queuedMessageSubscriptions[$name] ?? $name);
+        return $this->active($this->drainTargets[$name] ?? $name);
     }
 
     /**
@@ -80,21 +80,24 @@ class SubscriptionRegistry
     /**
      * @return list<Subscription>
      */
-    public function forTopic(string $topic, string $connection, string $defaultConnection): array
-    {
+    public function forTopicOnConnection(
+        string $topic,
+        string $connectionName,
+        string $defaultConnectionName,
+    ): array {
         return array_values(array_filter(
             $this->subscriptions,
             fn (Subscription $subscription): bool => $subscription->topic() === $topic
-                && $subscription->connection($defaultConnection) === $connection,
+                && $subscription->connectionName($defaultConnectionName) === $connectionName,
         ));
     }
 
-    private function registerQueuedMessageSubscription(string $queuedFor, string $subscription): void
+    private function registerDrainTarget(string $formerName, string $activeName): void
     {
-        if (isset($this->subscriptions[$queuedFor]) || isset($this->queuedMessageSubscriptions[$queuedFor])) {
-            throw InvalidSubscriptionException::duplicateName($queuedFor);
+        if (isset($this->subscriptions[$formerName]) || isset($this->drainTargets[$formerName])) {
+            throw InvalidSubscriptionException::duplicateName($formerName);
         }
 
-        $this->queuedMessageSubscriptions[$queuedFor] = $subscription;
+        $this->drainTargets[$formerName] = $activeName;
     }
 }

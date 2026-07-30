@@ -27,8 +27,8 @@ class Connection
             throw new InvalidTopicException($topic);
         }
 
-        $candidate = $message->withPublishedAt(CarbonImmutable::now('UTC'));
-        $body = $this->serializer->serialize($candidate);
+        $stampedMessage = $message->withPublishedAt(CarbonImmutable::now('UTC'));
+        $body = $this->serializer->serialize($stampedMessage);
 
         if (strlen($body) > self::MAX_ENVELOPE_BYTES) {
             throw new MessageTooLargeException(strlen($body), self::MAX_ENVELOPE_BYTES);
@@ -36,7 +36,7 @@ class Connection
 
         $this->driver->publish($topic, $body);
 
-        return $candidate;
+        return $stampedMessage;
     }
 
     /**

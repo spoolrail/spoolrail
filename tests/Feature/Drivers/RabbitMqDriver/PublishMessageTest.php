@@ -35,7 +35,7 @@ test('publishes through the next available RabbitMQ host to every subscription',
     // --- Assert ---
     $serializer = new MessageSerializer;
     $deliveries = [];
-    $prefix = app(OwnershipPrefix::class)->value();
+    $prefix = app(OwnershipPrefix::class)->current();
 
     foreach (["$prefix-warehouse", "$prefix-analytics"] as $queue) {
         $body = $this->drainRabbitMqDeliveries($queue, 1)[0]['payload'];

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\RabbitMq;
 
-use Spoolrail\Spoolrail\Exceptions\InvalidPhysicalNameException;
-use Spoolrail\Spoolrail\Exceptions\InvalidRabbitMqTopicNameException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqQueueNameTooLongException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqTopicNameTooLongException;
 
 class RabbitMqName
 {
@@ -13,24 +13,24 @@ class RabbitMqName
 
     public static function queue(string $ownershipPrefix, string $subscription): string
     {
-        $physicalName = "$ownershipPrefix-$subscription";
+        $queueName = "$ownershipPrefix-$subscription";
 
-        if (strlen($physicalName) > self::MAX_BYTES) {
-            throw new InvalidPhysicalNameException(
+        if (strlen($queueName) > self::MAX_BYTES) {
+            throw new RabbitMqQueueNameTooLongException(
                 $subscription,
-                $physicalName,
+                $queueName,
                 $ownershipPrefix,
                 self::MAX_BYTES,
             );
         }
 
-        return $physicalName;
+        return $queueName;
     }
 
     public static function topic(string $topic): string
     {
         if (strlen($topic) > self::MAX_BYTES) {
-            throw new InvalidRabbitMqTopicNameException($topic, self::MAX_BYTES);
+            throw new RabbitMqTopicNameTooLongException($topic, self::MAX_BYTES);
         }
 
         return $topic;

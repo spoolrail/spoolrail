@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Topology;
 
-use Spoolrail\Spoolrail\Exceptions\CurrentPrefixCannotBeRetiredException;
+use Spoolrail\Spoolrail\Exceptions\CurrentOwnershipPrefixCannotBeRetiredException;
 use Spoolrail\Spoolrail\Exceptions\ManagedTopologyUnavailableException;
 use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\SpoolrailManager;
@@ -20,44 +20,44 @@ readonly class DeleteUndeclaredSubscriptions
     ) {}
 
     /**
-     * @return list<string>
+     * @return list<string> Deleted physical subscription resource names
      */
-    public function run(string $connectionName, ?string $retiredPrefix): array
+    public function __invoke(string $connectionName, ?string $retiredPrefix): array
     {
-        $currentPrefix = $this->prefix->value();
+        $currentPrefix = $this->prefix->current();
         $targetPrefix = $retiredPrefix === null
             ? $currentPrefix
             : $this->prefix->validate($retiredPrefix);
 
         if ($retiredPrefix !== null && $targetPrefix === $currentPrefix) {
-            throw new CurrentPrefixCannotBeRetiredException($currentPrefix);
+            throw new CurrentOwnershipPrefixCannotBeRetiredException($currentPrefix);
         }
 
         $topology = $this->manager->connection($connectionName)->managedTopology()
             ?? throw new ManagedTopologyUnavailableException($connectionName);
 
-        $undeclared = $topology->undeclaredSubscriptions(
-            $retiredPrefix === null ? $this->subscriptionsFor($connectionName) : [],
+        $undeclaredResourceNames = $topology->undeclaredSubscriptionResourceNames(
+            $retiredPrefix === null ? $this->declaredSubscriptions($connectionName) : [],
             $targetPrefix,
         );
 
-        foreach ($undeclared as $physicalName) {
-            $topology->deleteSubscription($physicalName);
+        foreach ($undeclaredResourceNames as $resourceName) {
+            $topology->deleteSubscription($resourceName);
         }
 
-        return $undeclared;
+        return $undeclaredResourceNames;
     }
 
     /**
      * @return list<Subscription>
      */
-    private function subscriptionsFor(string $connectionName): array
+    private function declaredSubscriptions(string $connectionName): array
     {
-        $default = $this->manager->getDefaultConnection();
+        $defaultConnectionName = $this->manager->defaultConnectionName();
 
         return array_values(array_filter(
             $this->subscriptions->all(),
-            static fn (Subscription $subscription): bool => $subscription->connection($default) === $connectionName,
+            static fn (Subscription $subscription): bool => $subscription->connectionName($defaultConnectionName) === $connectionName,
         ));
     }
 }

@@ -15,7 +15,7 @@ readonly class DeleteTopic
         private SpoolrailManager $manager,
     ) {}
 
-    public function run(string $connectionName, string $topic): void
+    public function __invoke(string $connectionName, string $topic): void
     {
         if (! LogicalName::isValid($topic)) {
             throw new InvalidTopicException($topic);

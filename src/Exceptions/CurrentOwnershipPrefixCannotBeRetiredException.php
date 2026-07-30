@@ -6,7 +6,7 @@ namespace Spoolrail\Spoolrail\Exceptions;
 
 use InvalidArgumentException;
 
-class CurrentPrefixCannotBeRetiredException extends InvalidArgumentException implements SpoolrailException
+class CurrentOwnershipPrefixCannotBeRetiredException extends InvalidArgumentException implements SpoolrailException
 {
     public function __construct(string $prefix)
     {

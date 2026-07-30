@@ -16,7 +16,7 @@ uses(InteractsWithRabbitMq::class);
 test('synchronizes every referenced RabbitMQ connection after preflight', function (): void {
     // --- Arrange ---
     $this->addRabbitMqConnection('secondary');
-    $prefix = app(OwnershipPrefix::class)->value();
+    $prefix = app(OwnershipPrefix::class)->current();
 
     Spoolrail::subscribe('orders', 'rabbit-orders', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
@@ -41,7 +41,7 @@ test('reports every RabbitMQ preflight failure before applying a valid plan', fu
     // --- Arrange ---
     $this->addRabbitMqConnection('secondary');
     $this->addRabbitMqConnection('tertiary');
-    $prefix = app(OwnershipPrefix::class)->value();
+    $prefix = app(OwnershipPrefix::class)->current();
 
     $this->declareRabbitMqExchange('secondary-orders', type: 'direct');
     $this->declareRabbitMqExchange('tertiary-orders', type: 'direct');
@@ -64,9 +64,9 @@ test('reports every RabbitMQ preflight failure before applying a valid plan', fu
 
     // --- Assert ---
     expect($failure)->toBeInstanceOf(TopologyPreflightException::class);
-    expect(array_keys($failure?->failures ?? []))->toBe(['secondary', 'tertiary']);
-    expect($failure?->failures['secondary'] ?? null)->toBeInstanceOf(RabbitMqTopologyException::class);
-    expect($failure?->failures['tertiary'] ?? null)->toBeInstanceOf(RabbitMqTopologyException::class);
+    expect(array_keys($failure?->failuresByConnection ?? []))->toBe(['secondary', 'tertiary']);
+    expect($failure?->failuresByConnection['secondary'] ?? null)->toBeInstanceOf(RabbitMqTopologyException::class);
+    expect($failure?->failuresByConnection['tertiary'] ?? null)->toBeInstanceOf(RabbitMqTopologyException::class);
     expect($this->rabbitMqQueueExists("$prefix-rabbit-orders"))->toBeFalse();
 });
 
@@ -74,7 +74,7 @@ test('accepts repeated synchronization without replacing an existing quorum queu
     // --- Arrange ---
     $this->defaultToQuorumQueues();
 
-    $queueName = app(OwnershipPrefix::class)->value().'-warehouse';
+    $queueName = app(OwnershipPrefix::class)->current().'-warehouse';
 
     Spoolrail::subscribe('orders', 'warehouse', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');

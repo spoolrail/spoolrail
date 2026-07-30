@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementConfig;
 
-test('interprets the complete RabbitMQ connection configuration', function (): void {
+test('interprets the complete RabbitMQ connection config', function (): void {
     $config = new RabbitMqConnectionConfig('events', [
         'scheme' => 'amqps',
         'host' => 'rabbit.internal',
@@ -27,7 +27,7 @@ test('interprets the complete RabbitMQ connection configuration', function (): v
         ],
     ]);
 
-    $management = $config->management();
+    $managementConfig = $config->management();
 
     expect($config->scheme())->toBe('amqps');
     expect($config->hosts())->toBe(['rabbit.internal']);
@@ -40,10 +40,10 @@ test('interprets the complete RabbitMQ connection configuration', function (): v
     expect($config->heartbeat())->toBe(0);
     expect($config->publisherConfirmTimeout())->toBe(17);
     expect($config->prefetch())->toBe(65_535);
-    expect($management->url)->toBe('https://rabbit.internal:15671/api');
-    expect($management->username)->toBe('topology');
-    expect($management->password)->toBe('secret');
-    expect($management->caFile)->toBe(__DIR__.'/../OwnershipPrefixTest.php');
+    expect($managementConfig->url)->toBe('https://rabbit.internal:15671/api');
+    expect($managementConfig->username)->toBe('topology');
+    expect($managementConfig->password)->toBe('secret');
+    expect($managementConfig->caFile)->toBe(__DIR__.'/../OwnershipPrefixTest.php');
 });
 
 test('applies RabbitMQ local defaults and keeps management TLS trust independent', function (): void {
@@ -51,7 +51,7 @@ test('applies RabbitMQ local defaults and keeps management TLS trust independent
         'ca_file' => __FILE__,
     ]);
 
-    $management = $config->management();
+    $managementConfig = $config->management();
 
     expect($config->scheme())->toBe('amqp');
     expect($config->hosts())->toBe(['127.0.0.1']);
@@ -63,10 +63,10 @@ test('applies RabbitMQ local defaults and keeps management TLS trust independent
     expect($config->heartbeat())->toBe(60);
     expect($config->publisherConfirmTimeout())->toBe(60);
     expect($config->prefetch())->toBe(10);
-    expect($management->url)->toBe('http://127.0.0.1:15672');
-    expect($management->username)->toBe('guest');
-    expect($management->password)->toBe('guest');
-    expect($management->caFile)->toBeNull();
+    expect($managementConfig->url)->toBe('http://127.0.0.1:15672');
+    expect($managementConfig->username)->toBe('guest');
+    expect($managementConfig->password)->toBe('guest');
+    expect($managementConfig->caFile)->toBeNull();
 });
 
 test('preserves the configured order of multiple RabbitMQ hosts', function (): void {
@@ -83,9 +83,9 @@ test('preserves the configured order of multiple RabbitMQ hosts', function (): v
     ]);
 });
 
-test('rejects conflicting host forms, empty host lists, and unsupported schemes', function (array $configuration, string $setting): void {
-    expect(fn (): RabbitMqConnectionConfig => new RabbitMqConnectionConfig('events', $configuration))
-        ->toThrow(function (RabbitMqConfigurationException $exception) use ($setting): void {
+test('rejects conflicting host forms, empty host lists, and unsupported schemes', function (array $config, string $setting): void {
+    expect(fn (): RabbitMqConnectionConfig => new RabbitMqConnectionConfig('events', $config))
+        ->toThrow(function (RabbitMqConfigException $exception) use ($setting): void {
             expect($exception->getMessage())->toContain("setting [$setting]");
         });
 })->with([
@@ -117,7 +117,7 @@ test('rejects management URLs with credentials, queries, or fragments', function
     ]);
 
     expect(fn (): RabbitMqManagementConfig => $config->management())
-        ->toThrow(function (RabbitMqConfigurationException $exception) use ($setting): void {
+        ->toThrow(function (RabbitMqConfigException $exception) use ($setting): void {
             expect($exception->getMessage())->toContain("setting [$setting]");
         });
 })->with([
@@ -132,15 +132,15 @@ test('rejects management URLs with credentials, queries, or fragments', function
     ], 'management.url'],
 ]);
 
-test('never includes configured credentials in configuration diagnostics', function (): void {
-    $management = new RabbitMqConnectionConfig('events', [
+test('never includes configured credentials in config diagnostics', function (): void {
+    $connectionConfig = new RabbitMqConnectionConfig('events', [
         'management' => [
             'url' => 'https://topology:management-secret@rabbit.internal:15671/api',
         ],
     ]);
 
-    expect(fn (): RabbitMqManagementConfig => $management->management())
-        ->toThrow(function (RabbitMqConfigurationException $exception): void {
+    expect(fn (): RabbitMqManagementConfig => $connectionConfig->management())
+        ->toThrow(function (RabbitMqConfigException $exception): void {
             expect($exception->getMessage())
                 ->not->toContain('topology')
                 ->not->toContain('management-secret');

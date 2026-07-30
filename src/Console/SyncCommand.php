@@ -13,16 +13,16 @@ class SyncCommand extends Command
 
     protected $description = 'Validate and create declared Spoolrail topology';
 
-    public function handle(SyncTopology $topology): int
+    public function handle(SyncTopology $syncTopology): int
     {
-        $result = $topology->run();
+        $sync = $syncTopology();
 
-        foreach ($result->managedConnections as $connection) {
-            $this->components->info("Synchronized topology for connection [$connection].");
+        foreach ($sync->managedConnectionNames as $connectionName) {
+            $this->components->info("Synchronized topology for connection [$connectionName].");
         }
 
-        foreach ($result->unmanagedConnections as $connection) {
-            $this->components->warn("Connection [$connection] has no package-managed topology and was not changed.");
+        foreach ($sync->unmanagedConnectionNames as $connectionName) {
+            $this->components->warn("Connection [$connectionName] has no package-managed topology and was not changed.");
         }
 
         return self::SUCCESS;

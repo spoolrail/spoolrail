@@ -50,6 +50,10 @@
             "pint --parallel",
             "npm run format"
         ],
+        "format:check": [
+            "pint --test --parallel",
+            "npm run format:check"
+        ],
         "analyse": "phpstan --memory-limit=1G",
         "refactor": "rector",
         "mutate": [

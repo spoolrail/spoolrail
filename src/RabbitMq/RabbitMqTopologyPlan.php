@@ -14,7 +14,7 @@ readonly class RabbitMqTopologyPlan implements TopologyPlan
      * @param  list<array{exchange: string, queue: string}>  $bindings
      */
     public function __construct(
-        private RabbitMqManagementClient $management,
+        private RabbitMqManagementClient $managementClient,
         private array $exchanges,
         private array $queues,
         private array $bindings,
@@ -23,15 +23,15 @@ readonly class RabbitMqTopologyPlan implements TopologyPlan
     public function apply(): void
     {
         foreach ($this->exchanges as $exchange) {
-            $this->management->declareExchange($exchange);
+            $this->managementClient->declareExchange($exchange);
         }
 
         foreach ($this->queues as $queue) {
-            $this->management->declareQueue($queue['name'], $queue['arguments']);
+            $this->managementClient->declareQueue($queue['name'], $queue['arguments']);
         }
 
         foreach ($this->bindings as $binding) {
-            $this->management->bindQueue($binding['exchange'], $binding['queue']);
+            $this->managementClient->bindQueue($binding['exchange'], $binding['queue']);
         }
     }
 }

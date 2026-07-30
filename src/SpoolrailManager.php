@@ -13,9 +13,9 @@ use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
-use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Exceptions\MissingRabbitMqDependencyException;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
@@ -42,7 +42,7 @@ class SpoolrailManager
 
     public function connection(?string $name = null): Connection
     {
-        $name ??= $this->getDefaultConnection();
+        $name ??= $this->defaultConnectionName();
 
         return $this->connections[$name] ??= $this->resolve($name);
     }
@@ -56,7 +56,7 @@ class SpoolrailManager
 
     public function forgetConnection(?string $name = null): void
     {
-        $name ??= $this->getDefaultConnection();
+        $name ??= $this->defaultConnectionName();
 
         if (isset($this->connections[$name])) {
             $this->connections[$name]->close();
@@ -73,15 +73,15 @@ class SpoolrailManager
         return $this->connection()->$method(...$parameters);
     }
 
-    public function getDefaultConnection(): string
+    public function defaultConnectionName(): string
     {
-        $name = $this->config->get('spoolrail.default');
+        $connectionName = $this->config->get('spoolrail.default');
 
-        if (! is_string($name) || trim($name) === '') {
-            throw InvalidConfigurationException::invalidDefaultConnection();
+        if (! is_string($connectionName) || trim($connectionName) === '') {
+            throw InvalidConfigException::invalidDefaultConnection();
         }
 
-        return $name;
+        return $connectionName;
     }
 
     /**
@@ -89,13 +89,13 @@ class SpoolrailManager
      */
     public function configuredConnectionNames(): array
     {
-        $connections = $this->config->get('spoolrail.connections');
+        $configuredConnections = $this->config->get('spoolrail.connections');
 
-        if (! is_array($connections)) {
+        if (! is_array($configuredConnections)) {
             return [];
         }
 
-        return array_values(array_filter(array_keys($connections), is_string(...)));
+        return array_values(array_filter(array_keys($configuredConnections), is_string(...)));
     }
 
     /**
@@ -105,96 +105,96 @@ class SpoolrailManager
     {
         return array_values(array_filter(
             $this->configuredConnectionNames(),
-            function (string $name): bool {
-                $configuration = $this->config->get("spoolrail.connections.$name");
+            function (string $connectionName): bool {
+                $connectionConfig = $this->config->get("spoolrail.connections.$connectionName");
 
-                return is_array($configuration) && ($configuration['driver'] ?? null) !== 'array';
+                return is_array($connectionConfig) && ($connectionConfig['driver'] ?? null) !== 'array';
             },
         ));
     }
 
-    private function resolve(string $name): Connection
+    private function resolve(string $connectionName): Connection
     {
-        $config = $this->connectionConfig($name);
-        $driver = $this->driverName($name, $config);
+        $connectionConfig = $this->connectionConfig($connectionName);
+        $driverName = $this->driverName($connectionName, $connectionConfig);
 
-        if (isset($this->customCreators[$driver])) {
-            $instance = $this->customCreators[$driver]($this->app, $config, $name);
+        if (isset($this->customCreators[$driverName])) {
+            $driver = $this->customCreators[$driverName]($this->app, $connectionConfig, $connectionName);
         } else {
-            $instance = match ($driver) {
-                'array' => $this->createArrayDriver($name),
-                'rabbitmq' => $this->createRabbitMqDriver($name, $config),
-                default => throw InvalidConfigurationException::unsupportedDriver($driver),
+            $driver = match ($driverName) {
+                'array' => $this->createArrayDriver($connectionName),
+                'rabbitmq' => $this->createRabbitMqDriver($connectionName, $connectionConfig),
+                default => throw InvalidConfigException::unsupportedDriver($driverName),
             };
         }
 
-        return new Connection($instance, $this->serializer);
+        return new Connection($driver, $this->serializer);
     }
 
     /**
      * @return array<array-key, mixed>
      */
-    private function connectionConfig(string $name): array
+    private function connectionConfig(string $connectionName): array
     {
-        $config = $this->config->get("spoolrail.connections.$name");
+        $connectionConfig = $this->config->get("spoolrail.connections.$connectionName");
 
-        if ($config === null) {
-            throw InvalidConfigurationException::undefinedConnection($name);
+        if ($connectionConfig === null) {
+            throw InvalidConfigException::undefinedConnection($connectionName);
         }
 
-        if (! is_array($config)) {
-            throw InvalidConfigurationException::connectionMustBeArray($name);
+        if (! is_array($connectionConfig)) {
+            throw InvalidConfigException::connectionMustBeArray($connectionName);
         }
 
-        return $config;
+        return $connectionConfig;
     }
 
     /**
-     * @param  array<array-key, mixed>  $config
+     * @param  array<array-key, mixed>  $connectionConfig
      */
-    private function driverName(string $connection, array $config): string
+    private function driverName(string $connectionName, array $connectionConfig): string
     {
-        $driver = $config['driver'] ?? null;
+        $driver = $connectionConfig['driver'] ?? null;
 
         if (! is_string($driver) || trim($driver) === '') {
-            throw InvalidConfigurationException::missingDriver($connection);
+            throw InvalidConfigException::missingDriver($connectionName);
         }
 
         return $driver;
     }
 
-    private function createArrayDriver(string $name): ArrayDriver
+    private function createArrayDriver(string $connectionName): ArrayDriver
     {
         return new ArrayDriver(
-            $name,
-            $this->getDefaultConnection(),
+            $connectionName,
+            $this->defaultConnectionName(),
             $this->app->make(SubscriptionRegistry::class),
         );
     }
 
     /**
-     * @param  array<array-key, mixed>  $configuration
+     * @param  array<array-key, mixed>  $config
      *
      * @throws BindingResolutionException
      * @throws MissingRabbitMqDependencyException
-     * @throws RabbitMqConfigurationException
+     * @throws RabbitMqConfigException
      */
-    private function createRabbitMqDriver(string $name, array $configuration): RabbitMqDriver
+    private function createRabbitMqDriver(string $connectionName, array $config): RabbitMqDriver
     {
         if (! class_exists(AMQPConnectionConfig::class)) {
             throw new MissingRabbitMqDependencyException;
         }
 
-        $config = new RabbitMqConnectionConfig($name, $configuration);
-        $management = new RabbitMqManagementClient(
-            $config,
+        $connectionConfig = new RabbitMqConnectionConfig($connectionName, $config);
+        $managementClient = new RabbitMqManagementClient(
+            $connectionConfig,
             $this->app->make(HttpFactory::class),
         );
 
         return new RabbitMqDriver(
-            $config,
+            $connectionConfig,
             new RabbitMqConnectionFactory,
-            new RabbitMqTopology($config, $management),
+            new RabbitMqTopology($connectionConfig, $managementClient),
             $this->app->make(OwnershipPrefix::class),
         );
     }

@@ -36,8 +36,8 @@ class HandleMessageJob
 
     public function handle(SubscriptionRegistry $subscriptions, Container $container): void
     {
-        $definition = $subscriptions->getForQueuedMessage($this->subscription);
-        $handler = $container->get($definition->handler());
+        $subscription = $subscriptions->resolveForQueuedMessage($this->subscription);
+        $handler = $container->get($subscription->handlerClass());
 
         $handler->handle($this->message);
     }

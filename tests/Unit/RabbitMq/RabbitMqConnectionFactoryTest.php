@@ -7,9 +7,9 @@ use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 
-test('maps AMQPS identity heartbeat timeouts and private CA into a verified native configuration', function (): void {
+test('maps AMQPS identity heartbeat timeouts and private CA into a verified AMQP config', function (): void {
     // --- Arrange ---
-    $connection = new RabbitMqConnectionConfig('events', [
+    $connectionConfig = new RabbitMqConnectionConfig('events', [
         'scheme' => 'amqps',
         'host' => 'rabbit.internal',
         'port' => 5_679,
@@ -22,51 +22,51 @@ test('maps AMQPS identity heartbeat timeouts and private CA into a verified nati
     ]);
 
     // --- Act ---
-    $config = (new RabbitMqConnectionFactory)->configuration($connection, 'rabbit.internal');
+    $amqpConfig = (new RabbitMqConnectionFactory)->amqpConfig($connectionConfig, 'rabbit.internal');
 
     // --- Assert ---
-    expect($config->getHost())->toBe('rabbit.internal');
-    expect($config->getPort())->toBe(5_679);
-    expect($config->getUser())->toBe('publisher@tenant');
-    expect($config->getPassword())->toBe('p@ss');
-    expect($config->getVhost())->toBe('orders/production');
-    expect($config->getConnectionName())->toBe('spoolrail:events');
-    expect($config->getConnectionTimeout())->toBe(7.0);
-    expect($config->getHeartbeat())->toBe(45);
-    expect($config->isKeepalive())->toBeFalse();
-    expect($config->getReadTimeout())->toBe(90.0);
-    expect($config->getWriteTimeout())->toBe(90.0);
-    expect($config->isSecure())->toBeTrue();
-    expect($config->getSslVerify())->toBeTrue();
-    expect($config->getSslVerifyName())->toBeTrue();
-    expect($config->getSslCaCert())->toBe(__FILE__);
+    expect($amqpConfig->getHost())->toBe('rabbit.internal');
+    expect($amqpConfig->getPort())->toBe(5_679);
+    expect($amqpConfig->getUser())->toBe('publisher@tenant');
+    expect($amqpConfig->getPassword())->toBe('p@ss');
+    expect($amqpConfig->getVhost())->toBe('orders/production');
+    expect($amqpConfig->getConnectionName())->toBe('spoolrail:events');
+    expect($amqpConfig->getConnectionTimeout())->toBe(7.0);
+    expect($amqpConfig->getHeartbeat())->toBe(45);
+    expect($amqpConfig->isKeepalive())->toBeFalse();
+    expect($amqpConfig->getReadTimeout())->toBe(90.0);
+    expect($amqpConfig->getWriteTimeout())->toBe(90.0);
+    expect($amqpConfig->isSecure())->toBeTrue();
+    expect($amqpConfig->getSslVerify())->toBeTrue();
+    expect($amqpConfig->getSslVerifyName())->toBeTrue();
+    expect($amqpConfig->getSslCaCert())->toBe(__FILE__);
 });
 
 test('uses TCP keepalive and a usable socket timeout when the heartbeat is zero', function (): void {
     // --- Arrange ---
-    $connection = new RabbitMqConnectionConfig('events', [
+    $connectionConfig = new RabbitMqConnectionConfig('events', [
         'host' => 'rabbit.internal',
         'heartbeat' => 0,
     ]);
 
     // --- Act ---
-    $config = (new RabbitMqConnectionFactory)->configuration($connection, 'rabbit.internal');
+    $amqpConfig = (new RabbitMqConnectionFactory)->amqpConfig($connectionConfig, 'rabbit.internal');
 
     // --- Assert ---
-    expect($config->getHeartbeat())->toBe(0);
-    expect($config->isKeepalive())->toBeTrue();
-    expect($config->getReadTimeout())->toBe(3.0);
-    expect($config->getWriteTimeout())->toBe(3.0);
+    expect($amqpConfig->getHeartbeat())->toBe(0);
+    expect($amqpConfig->isKeepalive())->toBeTrue();
+    expect($amqpConfig->getReadTimeout())->toBe(3.0);
+    expect($amqpConfig->getWriteTimeout())->toBe(3.0);
 });
 
 test('rejects a detected RabbitMQ version older than 4.3', function (): void {
-    $native = Mockery::mock(AbstractConnection::class);
-    $native->shouldReceive('getServerProperties')
+    $amqpConnection = Mockery::mock(AbstractConnection::class);
+    $amqpConnection->shouldReceive('getServerProperties')
         ->once()
         ->andReturn(['version' => ['S', '4.2.9']]);
-    $native->shouldReceive('close')->once();
+    $amqpConnection->shouldReceive('close')->once();
 
-    expect(fn () => (new RabbitMqConnectionFactory)->verifySupportedBroker($native))
+    expect(fn () => (new RabbitMqConnectionFactory)->assertSupportedVersion($amqpConnection))
         ->toThrow(
             UnsupportedRabbitMqVersionException::class,
             'RabbitMQ [4.2.9] is not supported; Spoolrail requires RabbitMQ 4.3 or later.',

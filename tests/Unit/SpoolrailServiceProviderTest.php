@@ -6,7 +6,7 @@ use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\SpoolrailServiceProvider;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
-test('publishes the package configuration under the spoolrail config tag', function (): void {
+test('publishes the package config under the spoolrail config tag', function (): void {
     // --- Act ---
     $paths = SpoolrailServiceProvider::pathsToPublish(
         SpoolrailServiceProvider::class,
@@ -57,7 +57,7 @@ test('loads application subscription routes when booted without resolving a brok
 
     // --- Act ---
     $provider->boot();
-    $subscription = app(SubscriptionRegistry::class)->get('route-loaded-orders');
+    $subscription = app(SubscriptionRegistry::class)->active('route-loaded-orders');
 
     // --- Assert ---
     expect($subscription->topic())->toBe('orders');

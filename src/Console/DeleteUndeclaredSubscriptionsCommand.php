@@ -18,7 +18,7 @@ class DeleteUndeclaredSubscriptionsCommand extends Command
     protected $description = 'Delete application-owned receive resources no longer declared on one connection';
 
     public function handle(
-        DeleteUndeclaredSubscriptions $deletion,
+        DeleteUndeclaredSubscriptions $deleteUndeclaredSubscriptions,
         SpoolrailManager $manager,
         OwnershipPrefix $prefix,
     ): int {
@@ -37,34 +37,34 @@ class DeleteUndeclaredSubscriptionsCommand extends Command
             return self::FAILURE;
         }
 
-        $connection = $connectionOption ?? $manager->getDefaultConnection();
+        $connectionName = $connectionOption ?? $manager->defaultConnectionName();
         $retiredPrefix = $retiredPrefixOption;
         $targetPrefix = $retiredPrefix === null
-            ? $prefix->value()
+            ? $prefix->current()
             : $prefix->validate($retiredPrefix);
 
-        $this->components->info("Inspecting connection [$connection] with ownership prefix [$targetPrefix].");
+        $this->components->info("Inspecting connection [$connectionName] with ownership prefix [$targetPrefix].");
 
         if ($connectionOption === null) {
-            $uninspected = array_values(array_diff(
+            $uninspectedConnectionNames = array_values(array_diff(
                 $manager->potentiallyManagedConnectionNames(),
-                [$connection],
+                [$connectionName],
             ));
 
-            if ($uninspected !== []) {
+            if ($uninspectedConnectionNames !== []) {
                 $this->components->warn(
-                    'Other potentially managed connections were not inspected: '.implode(', ', $uninspected).'.',
+                    'Other potentially managed connections were not inspected: '.implode(', ', $uninspectedConnectionNames).'.',
                 );
             }
         }
 
-        $deleted = $deletion->run($connection, $retiredPrefix);
+        $deletedResourceNames = $deleteUndeclaredSubscriptions($connectionName, $retiredPrefix);
 
-        foreach ($deleted as $physicalName) {
-            $this->components->info("Deleted subscription resource [$physicalName].");
+        foreach ($deletedResourceNames as $resourceName) {
+            $this->components->info("Deleted subscription resource [$resourceName].");
         }
 
-        if ($deleted === []) {
+        if ($deletedResourceNames === []) {
             $this->components->info('No undeclared subscription resources were found.');
         }
 

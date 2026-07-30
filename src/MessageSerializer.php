@@ -98,19 +98,19 @@ class MessageSerializer
      */
     private function publishedAt(array $envelope): CarbonImmutable
     {
-        $value = $envelope['published_at'] ?? null;
+        $timestamp = $envelope['published_at'] ?? null;
 
-        if (! is_string($value)) {
+        if (! is_string($timestamp)) {
             throw InvalidMessageEnvelopeException::invalidTimestamp();
         }
 
         $publishedAt = DateTimeImmutable::createFromFormat(
             '!'.self::TIMESTAMP_FORMAT,
-            $value,
+            $timestamp,
             new DateTimeZone('UTC'),
         );
 
-        if ($publishedAt === false || $publishedAt->format(self::TIMESTAMP_FORMAT) !== $value) {
+        if ($publishedAt === false || $publishedAt->format(self::TIMESTAMP_FORMAT) !== $timestamp) {
             throw InvalidMessageEnvelopeException::invalidTimestamp();
         }
 

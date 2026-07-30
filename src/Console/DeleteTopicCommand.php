@@ -16,7 +16,7 @@ class DeleteTopicCommand extends Command
 
     protected $description = 'Delete one unused logical topic without deleting subscriptions';
 
-    public function handle(DeleteTopic $deletion, SpoolrailManager $manager): int
+    public function handle(DeleteTopic $deleteTopic, SpoolrailManager $manager): int
     {
         $connectionOption = $this->option('connection');
 
@@ -26,11 +26,11 @@ class DeleteTopicCommand extends Command
             return self::FAILURE;
         }
 
-        $connection = $connectionOption ?? $manager->getDefaultConnection();
+        $connectionName = $connectionOption ?? $manager->defaultConnectionName();
         $topic = $this->argument('topic');
 
-        $deletion->run($connection, $topic);
-        $this->components->info("Deleted topic [$topic] from connection [$connection].");
+        $deleteTopic($connectionName, $topic);
+        $this->components->info("Deleted topic [$topic] from connection [$connectionName].");
 
         return self::SUCCESS;
     }

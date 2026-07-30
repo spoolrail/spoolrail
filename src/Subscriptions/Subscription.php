@@ -11,21 +11,21 @@ use Spoolrail\Spoolrail\LogicalName;
 
 class Subscription
 {
-    private ?string $connection = null;
+    private ?string $connectionName = null;
 
-    private ?string $queueConnection = null;
+    private ?string $queueConnectionName = null;
 
-    private ?string $queue = null;
+    private ?string $queueName = null;
 
     /**
-     * @param  class-string<MessageHandler>  $handler
-     * @param  Closure(string): void  $registerQueuedMessageSubscription
+     * @param  class-string<MessageHandler>  $handlerClass
+     * @param  Closure(string): void  $registerDrainTarget
      */
     public function __construct(
         private readonly string $topic,
         private readonly string $name,
-        private readonly string $handler,
-        private readonly Closure $registerQueuedMessageSubscription,
+        private readonly string $handlerClass,
+        private readonly Closure $registerDrainTarget,
     ) {}
 
     public function topic(): string
@@ -41,58 +41,56 @@ class Subscription
     /**
      * @return class-string<MessageHandler>
      */
-    public function handler(): string
+    public function handlerClass(): string
     {
-        return $this->handler;
+        return $this->handlerClass;
     }
 
     public function onConnection(string $connection): self
     {
-        $this->connection = $this->requireName($connection, 'Spoolrail connection');
+        $this->connectionName = $this->requireName($connection, 'Spoolrail connection');
 
         return $this;
     }
 
     public function onQueueConnection(string $connection): self
     {
-        $this->queueConnection = $this->requireName($connection, 'Queue connection');
+        $this->queueConnectionName = $this->requireName($connection, 'Queue connection');
 
         return $this;
     }
 
     public function onQueue(string $queue): self
     {
-        $this->queue = $this->requireName($queue, 'Queue');
+        $this->queueName = $this->requireName($queue, 'Queue');
 
         return $this;
     }
 
-    public function drainMessagesQueuedFor(string $subscription): self
+    public function drainMessagesQueuedFor(string $formerName): self
     {
-        if (! LogicalName::isValid($subscription)) {
-            throw InvalidSubscriptionException::invalidName($subscription);
+        if (! LogicalName::isValid($formerName)) {
+            throw InvalidSubscriptionException::invalidName($formerName);
         }
 
-        ($this->registerQueuedMessageSubscription)(
-            $subscription,
-        );
+        ($this->registerDrainTarget)($formerName);
 
         return $this;
     }
 
-    public function connection(string $default): string
+    public function connectionName(string $defaultConnectionName): string
     {
-        return $this->connection ?? $default;
+        return $this->connectionName ?? $defaultConnectionName;
     }
 
-    public function queueConnection(): ?string
+    public function queueConnectionName(): ?string
     {
-        return $this->queueConnection;
+        return $this->queueConnectionName;
     }
 
-    public function queue(): ?string
+    public function queueName(): ?string
     {
-        return $this->queue;
+        return $this->queueName;
     }
 
     private function requireName(string $value, string $label): string

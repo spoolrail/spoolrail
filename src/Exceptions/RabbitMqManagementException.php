@@ -9,30 +9,30 @@ use RuntimeException;
 class RabbitMqManagementException extends RuntimeException implements SpoolrailException
 {
     public static function requestFailed(
-        string $connection,
+        string $connectionName,
         string $operation,
-        string $failure,
+        string $reason,
     ): self {
         return new self(
-            "RabbitMQ connection [$connection] Management API request failed while $operation.",
-            previous: new RuntimeException($failure),
+            "RabbitMQ connection [$connectionName] Management API request failed while $operation.",
+            previous: new RuntimeException($reason),
         );
     }
 
     public static function unexpectedStatus(
-        string $connection,
+        string $connectionName,
         string $operation,
         int $status,
     ): self {
         return new self(
-            "RabbitMQ connection [$connection] Management API returned HTTP $status while $operation.",
+            "RabbitMQ connection [$connectionName] Management API returned HTTP $status while $operation.",
         );
     }
 
-    public static function invalidResponse(string $connection, string $operation): self
+    public static function invalidResponse(string $connectionName, string $operation): self
     {
         return new self(
-            "RabbitMQ connection [$connection] Management API returned an invalid response while $operation.",
+            "RabbitMQ connection [$connectionName] Management API returned an invalid response while $operation.",
         );
     }
 }

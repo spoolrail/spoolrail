@@ -13,7 +13,7 @@ uses(InteractsWithRabbitMq::class);
 
 test('returns every unsettled prefetched RabbitMQ delivery after a failed handoff', function (): void {
     // --- Arrange ---
-    $queue = app(OwnershipPrefix::class)->value().'-warehouse';
+    $queue = app(OwnershipPrefix::class)->current().'-warehouse';
 
     config()->set('spoolrail.connections.rabbitmq.prefetch', 3);
 

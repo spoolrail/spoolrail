@@ -6,7 +6,7 @@ namespace Spoolrail\Spoolrail\Exceptions;
 
 use LengthException;
 
-class InvalidRabbitMqTopicNameException extends LengthException implements SpoolrailException
+class RabbitMqTopicNameTooLongException extends LengthException implements SpoolrailException
 {
     public function __construct(string $topic, int $limit)
     {

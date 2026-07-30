@@ -14,10 +14,10 @@ class RabbitMqManagementClient
 {
     private const int PAGE_SIZE = 500;
 
-    private ?RabbitMqManagementConfig $management = null;
+    private ?RabbitMqManagementConfig $managementConfig = null;
 
     public function __construct(
-        private readonly RabbitMqConnectionConfig $connection,
+        private readonly RabbitMqConnectionConfig $config,
         private readonly Factory $http,
     ) {}
 
@@ -26,7 +26,7 @@ class RabbitMqManagementClient
      */
     public function overview(): array
     {
-        return $this->object('overview', 'reading the broker version');
+        return $this->read('overview', 'reading the broker version');
     }
 
     /**
@@ -34,8 +34,8 @@ class RabbitMqManagementClient
      */
     public function virtualHost(): array
     {
-        return $this->object(
-            'vhosts/'.$this->segment($this->connection->virtualHost()),
+        return $this->read(
+            'vhosts/'.$this->segment($this->config->virtualHost()),
             'reading the virtual host',
         );
     }
@@ -45,7 +45,7 @@ class RabbitMqManagementClient
      */
     public function exchange(string $exchange): ?array
     {
-        return $this->optionalObject(
+        return $this->find(
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange),
             "reading exchange [$exchange]",
         );
@@ -56,7 +56,7 @@ class RabbitMqManagementClient
      */
     public function queue(string $queue): ?array
     {
-        return $this->optionalObject(
+        return $this->find(
             'queues/'.$this->virtualHostSegment().'/'.$this->segment($queue),
             "reading queue [$queue]",
         );
@@ -85,7 +85,7 @@ class RabbitMqManagementClient
                     'disable_stats' => 'true',
                 ],
             );
-            [$items, $pageCount] = $this->decodedPage($response, $operation, $page);
+            [$items, $pageCount] = $this->decodePage($response, $operation, $page);
             array_push($queues, ...$items);
             $page++;
         } while ($page <= $pageCount);
@@ -98,7 +98,7 @@ class RabbitMqManagementClient
      */
     public function queueBindings(string $queue): array
     {
-        return $this->objects(
+        return $this->readAll(
             'queues/'.$this->virtualHostSegment().'/'.$this->segment($queue).'/bindings',
             "reading bindings for queue [$queue]",
         );
@@ -109,7 +109,7 @@ class RabbitMqManagementClient
      */
     public function policies(): array
     {
-        return $this->objects(
+        return $this->readAll(
             'policies/'.$this->virtualHostSegment(),
             'reading queue policies',
         );
@@ -120,7 +120,7 @@ class RabbitMqManagementClient
      */
     public function operatorPolicies(): array
     {
-        return $this->objects(
+        return $this->readAll(
             'operator-policies/'.$this->virtualHostSegment(),
             'reading operator policies',
         );
@@ -131,7 +131,7 @@ class RabbitMqManagementClient
      */
     public function exchangeSourceBindings(string $exchange): array
     {
-        return $this->objects(
+        return $this->readAll(
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange).'/bindings/source',
             "reading outgoing bindings for topic [$exchange]",
         );
@@ -142,7 +142,7 @@ class RabbitMqManagementClient
      */
     public function exchangeDestinationBindings(string $exchange): array
     {
-        return $this->objects(
+        return $this->readAll(
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange).'/bindings/destination',
             "reading incoming bindings for topic [$exchange]",
         );
@@ -221,9 +221,9 @@ class RabbitMqManagementClient
     /**
      * @return array<string, mixed>
      */
-    private function object(string $path, string $operation): array
+    private function read(string $path, string $operation): array
     {
-        return $this->decodedObject(
+        return $this->decodeMap(
             $this->request('GET', $path, $operation),
             $operation,
         );
@@ -232,7 +232,7 @@ class RabbitMqManagementClient
     /**
      * @return array<string, mixed>|null
      */
-    private function optionalObject(string $path, string $operation): ?array
+    private function find(string $path, string $operation): ?array
     {
         $response = $this->request('GET', $path, $operation, allowNotFound: true);
 
@@ -240,28 +240,28 @@ class RabbitMqManagementClient
             return null;
         }
 
-        return $this->decodedObject($response, $operation);
+        return $this->decodeMap($response, $operation);
     }
 
     /**
      * @return list<array<string, mixed>>
      */
-    private function objects(string $path, string $operation): array
+    private function readAll(string $path, string $operation): array
     {
         $response = $this->request('GET', $path, $operation);
         $decoded = $response->json();
 
         if (! is_array($decoded) || ! array_is_list($decoded)) {
             throw RabbitMqManagementException::invalidResponse(
-                $this->connection->connection,
+                $this->config->connectionName,
                 $operation,
             );
         }
 
-        foreach ($decoded as $value) {
-            if (! is_array($value) || array_is_list($value)) {
+        foreach ($decoded as $map) {
+            if (! is_array($map) || array_is_list($map)) {
                 throw RabbitMqManagementException::invalidResponse(
-                    $this->connection->connection,
+                    $this->config->connectionName,
                     $operation,
                 );
             }
@@ -274,37 +274,37 @@ class RabbitMqManagementClient
     /**
      * @return array<string, mixed>
      */
-    private function decodedObject(Response $response, string $operation): array
+    private function decodeMap(Response $response, string $operation): array
     {
         $decoded = $response->json();
 
         if (! is_array($decoded) || array_is_list($decoded)) {
             throw RabbitMqManagementException::invalidResponse(
-                $this->connection->connection,
+                $this->config->connectionName,
                 $operation,
             );
         }
 
-        $object = [];
+        $map = [];
 
         foreach ($decoded as $key => $value) {
             if (! is_string($key)) {
                 throw RabbitMqManagementException::invalidResponse(
-                    $this->connection->connection,
+                    $this->config->connectionName,
                     $operation,
                 );
             }
 
-            $object[$key] = $value;
+            $map[$key] = $value;
         }
 
-        return $object;
+        return $map;
     }
 
     /**
      * @return array{list<array<string, mixed>>, int}
      */
-    private function decodedPage(Response $response, string $operation, int $requestedPage): array
+    private function decodePage(Response $response, string $operation, int $requestedPage): array
     {
         $decoded = $response->json();
 
@@ -321,7 +321,7 @@ class RabbitMqManagementClient
                 : $requestedPage > $decoded['page_count'])
         ) {
             throw RabbitMqManagementException::invalidResponse(
-                $this->connection->connection,
+                $this->config->connectionName,
                 $operation,
             );
         }
@@ -329,7 +329,7 @@ class RabbitMqManagementClient
         foreach ($decoded['items'] as $item) {
             if (! is_array($item) || array_is_list($item)) {
                 throw RabbitMqManagementException::invalidResponse(
-                    $this->connection->connection,
+                    $this->config->connectionName,
                     $operation,
                 );
             }
@@ -391,7 +391,7 @@ class RabbitMqManagementClient
             $response = $pending->send($method, $path, $options);
         } catch (Throwable $exception) {
             throw RabbitMqManagementException::requestFailed(
-                $this->connection->connection,
+                $this->config->connectionName,
                 $operation,
                 $exception->getMessage(),
             );
@@ -399,7 +399,7 @@ class RabbitMqManagementClient
 
         if (! $response->successful() && (! $allowNotFound || ! $response->notFound())) {
             throw RabbitMqManagementException::unexpectedStatus(
-                $this->connection->connection,
+                $this->config->connectionName,
                 $operation,
                 $response->status(),
             );
@@ -413,23 +413,23 @@ class RabbitMqManagementClient
      */
     public function pendingRequest(): PendingRequest
     {
-        $management = $this->management();
+        $managementConfig = $this->managementConfig();
 
         /** @var PendingRequest $pending */
         $pending = $this->http->baseUrl($this->apiUrl());
 
         return $pending
-            ->withBasicAuth($management->username, $management->password)
+            ->withBasicAuth($managementConfig->username, $managementConfig->password)
             ->acceptJson()
             ->asJson()
             ->withOptions([
-                'verify' => $management->caFile ?? true,
+                'verify' => $managementConfig->caFile ?? true,
             ]);
     }
 
     private function apiUrl(): string
     {
-        $url = $this->management()->url;
+        $url = $this->managementConfig()->url;
 
         if (str_ends_with(parse_url($url, PHP_URL_PATH) ?: '', '/api')) {
             return $url;
@@ -440,7 +440,7 @@ class RabbitMqManagementClient
 
     private function virtualHostSegment(): string
     {
-        return $this->segment($this->connection->virtualHost());
+        return $this->segment($this->config->virtualHost());
     }
 
     private function segment(string $value): string
@@ -448,8 +448,8 @@ class RabbitMqManagementClient
         return rawurlencode($value);
     }
 
-    private function management(): RabbitMqManagementConfig
+    private function managementConfig(): RabbitMqManagementConfig
     {
-        return $this->management ??= $this->connection->management();
+        return $this->managementConfig ??= $this->config->management();
     }
 }

@@ -49,6 +49,7 @@ If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-de
 | ------------------------ | --------------------------------------------------- |
 | `composer test`          | Run the default suite, including RabbitMQ coverage. |
 | `composer format`        | Run Laravel Pint and Prettier formatting.           |
+| `composer format:check`  | Check Laravel Pint and Prettier formatting.         |
 | `composer analyse`       | Run static analysis (`phpstan`).                    |
 | `composer refactor`      | Apply Rector refactors.                             |
 | `composer mutate`        | Run mutation testing across the package.            |
@@ -71,6 +72,8 @@ composer update -W \
     pestphp/pest:^4.0 \
     pestphp/pest-plugin-laravel:^4.0
 ```
+
+The Pest 5 upgrade is deferred until after Laravel 12 support is dropped due to [pestphp/pest#1772](https://github.com/pestphp/pest/pull/1772).
 
 ## Claude Setup (Optional)
 

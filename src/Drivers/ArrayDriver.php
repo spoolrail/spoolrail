@@ -16,16 +16,16 @@ class ArrayDriver implements Driver
 
     public function __construct(
         private readonly string $connectionName,
-        private readonly string $defaultConnection,
+        private readonly string $defaultConnectionName,
         private readonly SubscriptionRegistry $subscriptions,
     ) {}
 
     public function publish(string $topic, string $body): void
     {
-        foreach ($this->subscriptions->forTopic(
+        foreach ($this->subscriptions->forTopicOnConnection(
             $topic,
             $this->connectionName,
-            $this->defaultConnection,
+            $this->defaultConnectionName,
         ) as $subscription) {
             $this->deliveries[$subscription->name()][] = $body;
         }

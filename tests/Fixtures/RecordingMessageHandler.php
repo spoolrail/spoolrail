@@ -13,7 +13,7 @@ use Spoolrail\Spoolrail\Message;
 #[MaxExceptions(4)]
 class RecordingMessageHandler implements MessageHandler
 {
-    use HandlerQueuePolicyTimeout;
+    use HandlerTimeoutPolicy;
 
     /** @var list<Message> */
     public static array $messages = [];
@@ -26,7 +26,7 @@ class RecordingMessageHandler implements MessageHandler
 
     public static ?string $middlewareMessageId = null;
 
-    public static int $policyFailuresRemaining = 0;
+    public static int $queuePolicyFailuresRemaining = 0;
 
     public int $timeout = 30;
 
@@ -50,8 +50,8 @@ class RecordingMessageHandler implements MessageHandler
 
     public function tries(): int
     {
-        if (self::$policyFailuresRemaining > 0) {
-            self::$policyFailuresRemaining--;
+        if (self::$queuePolicyFailuresRemaining > 0) {
+            self::$queuePolicyFailuresRemaining--;
 
             throw new RuntimeException('Handler queue policy failed.');
         }
@@ -74,6 +74,6 @@ class RecordingMessageHandler implements MessageHandler
         self::$constructions = 0;
         self::$handlerFailuresRemaining = 0;
         self::$middlewareMessageId = null;
-        self::$policyFailuresRemaining = 0;
+        self::$queuePolicyFailuresRemaining = 0;
     }
 }

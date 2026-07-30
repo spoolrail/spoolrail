@@ -20,52 +20,58 @@ readonly class SyncTopology
         private OwnershipPrefix $prefix,
     ) {}
 
-    public function run(): SyncTopologyResult
+    public function __invoke(): SyncTopologyResult
     {
-        $grouped = $this->groupSubscriptions();
-        $plans = [];
-        $unmanaged = [];
-        $failures = [];
+        $subscriptionsByConnection = $this->subscriptionsByConnection();
+        $plansByConnection = [];
+        $unmanagedConnectionNames = [];
+        $failuresByConnection = [];
 
-        foreach ($grouped as $connectionName => $subscriptions) {
+        foreach ($subscriptionsByConnection as $connectionName => $subscriptions) {
             try {
                 $topology = $this->manager->connection($connectionName)->managedTopology();
 
                 if (! $topology instanceof ManagedTopology) {
-                    $unmanaged[] = $connectionName;
+                    $unmanagedConnectionNames[] = $connectionName;
 
                     continue;
                 }
 
-                $plans[$connectionName] = $topology->planSync($subscriptions, $this->prefix->value());
+                $plansByConnection[$connectionName] = $topology->planSync(
+                    $subscriptions,
+                    $this->prefix->current(),
+                );
             } catch (Throwable $failure) {
-                $failures[$connectionName] = $failure;
+                $failuresByConnection[$connectionName] = $failure;
             }
         }
 
-        if ($failures !== []) {
-            throw new TopologyPreflightException($failures);
+        if ($failuresByConnection !== []) {
+            throw new TopologyPreflightException($failuresByConnection);
         }
 
-        foreach ($plans as $plan) {
+        foreach ($plansByConnection as $plan) {
             $plan->apply();
         }
 
-        return new SyncTopologyResult(array_keys($plans), $unmanaged);
+        return new SyncTopologyResult(
+            array_keys($plansByConnection),
+            $unmanagedConnectionNames,
+        );
     }
 
     /**
      * @return array<string, list<Subscription>>
      */
-    private function groupSubscriptions(): array
+    private function subscriptionsByConnection(): array
     {
-        $default = $this->manager->getDefaultConnection();
-        $grouped = [];
+        $defaultConnectionName = $this->manager->defaultConnectionName();
+        $subscriptionsByConnection = [];
 
         foreach ($this->subscriptions->all() as $subscription) {
-            $grouped[$subscription->connection($default)][] = $subscription;
+            $subscriptionsByConnection[$subscription->connectionName($defaultConnectionName)][] = $subscription;
         }
 
-        return $grouped;
+        return $subscriptionsByConnection;
     }
 }

@@ -8,15 +8,15 @@ test('rebuilds only the forgotten default connection on its next request', funct
     // --- Arrange ---
     config()->set('spoolrail.connections.secondary', ['driver' => 'array']);
 
-    $default = Spoolrail::connection();
-    $secondary = Spoolrail::connection('secondary');
+    $defaultConnection = Spoolrail::connection();
+    $secondaryConnection = Spoolrail::connection('secondary');
 
     // --- Act ---
     Spoolrail::forgetConnection();
-    $replacement = Spoolrail::connection();
-    $remaining = Spoolrail::connection('secondary');
+    $replacementConnection = Spoolrail::connection();
+    $remainingConnection = Spoolrail::connection('secondary');
 
     // --- Assert ---
-    expect($replacement)->not->toBe($default);
-    expect($remaining)->toBe($secondary);
+    expect($replacementConnection)->not->toBe($defaultConnection);
+    expect($remainingConnection)->toBe($secondaryConnection);
 });

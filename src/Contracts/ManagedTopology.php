@@ -15,9 +15,9 @@ interface ManagedTopology
 
     /**
      * @param  list<Subscription>  $subscriptions
-     * @return list<string>
+     * @return list<string> Physical subscription resource names not represented by the declarations
      */
-    public function undeclaredSubscriptions(
+    public function undeclaredSubscriptionResourceNames(
         array $subscriptions,
         string $ownershipPrefix,
     ): array;

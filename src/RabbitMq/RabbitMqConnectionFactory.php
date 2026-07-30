@@ -12,35 +12,35 @@ use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
 
 class RabbitMqConnectionFactory
 {
-    public function create(RabbitMqConnectionConfig $connection): AbstractConnection
+    public function create(RabbitMqConnectionConfig $config): AbstractConnection
     {
-        $hosts = $connection->hosts();
+        $hosts = $config->hosts();
         $lastHost = array_pop($hosts);
 
         foreach ($hosts as $host) {
             try {
-                return $this->connect($connection, $host);
+                return $this->connect($config, $host);
             } catch (Exception) {
                 // Try the next configured host while establishing the connection.
             }
         }
 
-        return $this->connect($connection, $lastHost);
+        return $this->connect($config, $lastHost);
     }
 
     /**
      * @internal
      */
-    public function verifySupportedBroker(AbstractConnection $native): void
+    public function assertSupportedVersion(AbstractConnection $amqpConnection): void
     {
-        $properties = $native->getServerProperties();
+        $properties = $amqpConnection->getServerProperties();
         $versionProperty = $properties['version'] ?? null;
         $version = is_array($versionProperty) && isset($versionProperty[1]) && is_string($versionProperty[1])
             ? $versionProperty[1]
             : null;
 
         if (! is_string($version) || version_compare($version, RabbitMqVersion::MINIMUM, '<')) {
-            $native->close();
+            $amqpConnection->close();
 
             throw new UnsupportedRabbitMqVersionException(is_string($version) ? $version : 'unknown');
         }
@@ -49,43 +49,43 @@ class RabbitMqConnectionFactory
     /**
      * @internal
      */
-    public function configuration(RabbitMqConnectionConfig $connection, string $host): AMQPConnectionConfig
+    public function amqpConfig(RabbitMqConnectionConfig $config, string $host): AMQPConnectionConfig
     {
-        $config = new AMQPConnectionConfig;
-        $config->setHost($host);
-        $config->setPort($connection->port());
-        $config->setUser($connection->username());
-        $config->setPassword($connection->password());
-        $config->setVhost($connection->virtualHost());
-        $config->setConnectionTimeout($connection->connectionTimeout());
+        $amqpConfig = new AMQPConnectionConfig;
+        $amqpConfig->setHost($host);
+        $amqpConfig->setPort($config->port());
+        $amqpConfig->setUser($config->username());
+        $amqpConfig->setPassword($config->password());
+        $amqpConfig->setVhost($config->virtualHost());
+        $amqpConfig->setConnectionTimeout($config->connectionTimeout());
 
-        $heartbeat = $connection->heartbeat();
+        $heartbeat = $config->heartbeat();
 
-        $config->setHeartbeat($heartbeat);
-        $config->setKeepalive($heartbeat === 0);
-        $config->setConnectionName("spoolrail:$connection->connection");
+        $amqpConfig->setHeartbeat($heartbeat);
+        $amqpConfig->setKeepalive($heartbeat === 0);
+        $amqpConfig->setConnectionName("spoolrail:$config->connectionName");
 
         $readWriteTimeout = max(3.0, $heartbeat * 2.0);
 
-        $config->setReadTimeout($readWriteTimeout);
-        $config->setWriteTimeout($readWriteTimeout);
+        $amqpConfig->setReadTimeout($readWriteTimeout);
+        $amqpConfig->setWriteTimeout($readWriteTimeout);
 
-        if ($connection->scheme() === 'amqps') {
-            $config->setIsSecure(true);
-            $config->setSslVerify(true);
-            $config->setSslVerifyName(true);
-            $config->setSslCaCert($connection->caFile());
+        if ($config->scheme() === 'amqps') {
+            $amqpConfig->setIsSecure(true);
+            $amqpConfig->setSslVerify(true);
+            $amqpConfig->setSslVerifyName(true);
+            $amqpConfig->setSslCaCert($config->caFile());
         }
 
-        return $config;
+        return $amqpConfig;
     }
 
-    private function connect(RabbitMqConnectionConfig $connection, string $host): AbstractConnection
+    private function connect(RabbitMqConnectionConfig $config, string $host): AbstractConnection
     {
-        $native = AMQPConnectionFactory::create($this->configuration($connection, $host));
+        $amqpConnection = AMQPConnectionFactory::create($this->amqpConfig($config, $host));
 
-        $this->verifySupportedBroker($native);
+        $this->assertSupportedVersion($amqpConnection);
 
-        return $native;
+        return $amqpConnection;
     }
 }

@@ -6,7 +6,7 @@ use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageException;
 use Spoolrail\Spoolrail\Message;
 
-test('creates an unpublished UUIDv7 message with caller-defined data', function (): void {
+test('creates an unpublished UUIDv7 message with a caller-defined payload', function (): void {
     $type = 'order.created';
     $payload = [
         'order_id' => 42,

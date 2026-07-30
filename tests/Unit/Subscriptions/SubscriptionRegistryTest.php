@@ -17,7 +17,7 @@ test('rejects a duplicate name without replacing the registered subscription', f
             InvalidSubscriptionException::class,
             'Subscription [warehouse-orders] has already been registered.',
         );
-    expect($subscriptions->get('warehouse-orders'))->toBe($registered);
+    expect($subscriptions->active('warehouse-orders'))->toBe($registered);
 });
 
 test('rejects a queued-message drain name already used by an active subscription', function (): void {
@@ -41,7 +41,7 @@ test('rejects an active subscription name already used for queued-message draini
 
     expect(fn (): Subscription => $subscriptions->subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class))
         ->toThrow(InvalidSubscriptionException::class);
-    expect($subscriptions->getForQueuedMessage('warehouse-order-processing'))->toBe($replacement);
+    expect($subscriptions->resolveForQueuedMessage('warehouse-order-processing'))->toBe($replacement);
 });
 
 test('rejects a queued-message drain name already claimed by another subscription', function (): void {
@@ -57,7 +57,7 @@ test('rejects a queued-message drain name already claimed by another subscriptio
 
     expect(fn (): Subscription => $secondReplacement->drainMessagesQueuedFor('warehouse-order-processing'))
         ->toThrow(InvalidSubscriptionException::class);
-    expect($subscriptions->getForQueuedMessage('warehouse-order-processing'))->toBe($firstReplacement);
+    expect($subscriptions->resolveForQueuedMessage('warehouse-order-processing'))->toBe($firstReplacement);
 });
 
 test('rejects handlers outside the message handler contract without reserving the subscription name', function (): void {

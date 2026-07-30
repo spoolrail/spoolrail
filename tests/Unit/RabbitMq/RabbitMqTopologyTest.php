@@ -36,12 +36,12 @@ function rabbitMqTopology(array $responses = []): array
         return $http->response($body, $status);
     });
 
-    $connection = new RabbitMqConnectionConfig('events', []);
+    $connectionConfig = new RabbitMqConnectionConfig('events', []);
 
     return [
         new RabbitMqTopology(
-            $connection,
-            new RabbitMqManagementClient($connection, $http),
+            $connectionConfig,
+            new RabbitMqManagementClient($connectionConfig, $http),
         ),
         $http,
     ];

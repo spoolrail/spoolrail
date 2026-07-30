@@ -23,13 +23,13 @@ use Throwable;
 
 class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
 {
-    private ?AbstractConnection $nativeConnection = null;
+    private ?AbstractConnection $amqpConnection = null;
 
     private ?AMQPChannel $publisherChannel = null;
 
     public function __construct(
         private readonly RabbitMqConnectionConfig $config,
-        private readonly RabbitMqConnectionFactory $connections,
+        private readonly RabbitMqConnectionFactory $connectionFactory,
         private readonly ManagedTopology $topology,
         private readonly OwnershipPrefix $ownershipPrefix,
     ) {}
@@ -68,11 +68,11 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
      */
     public function consume(string $subscription, Closure $handoff): void
     {
-        $queue = RabbitMqName::queue($this->ownershipPrefix->value(), $subscription);
-        $native = $this->nativeConnection();
+        $queue = RabbitMqName::queue($this->ownershipPrefix->current(), $subscription);
+        $amqpConnection = $this->amqpConnection();
 
         try {
-            $channel = $native->channel();
+            $channel = $amqpConnection->channel();
             $channel->basic_qos(0, $this->config->prefetch(), false);
             $channel->basic_consume(
                 $queue,
@@ -112,13 +112,13 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
 
     /**
      * @param  list<Subscription>  $subscriptions
-     * @return list<string>
+     * @return list<string> Physical subscription resource names not represented by the declarations
      */
-    public function undeclaredSubscriptions(
+    public function undeclaredSubscriptionResourceNames(
         array $subscriptions,
         string $ownershipPrefix,
     ): array {
-        return $this->topology->undeclaredSubscriptions(
+        return $this->topology->undeclaredSubscriptionResourceNames(
             $subscriptions,
             $ownershipPrefix,
         );
@@ -140,7 +140,7 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
             return $this->publisherChannel;
         }
 
-        $channel = $this->nativeConnection()->channel();
+        $channel = $this->amqpConnection()->channel();
         $channel->confirm_select();
         $channel->set_nack_handler(static function (): never {
             throw new RabbitMqPublicationRejectedException;
@@ -149,19 +149,19 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
         return $this->publisherChannel = $channel;
     }
 
-    private function nativeConnection(): AbstractConnection
+    private function amqpConnection(): AbstractConnection
     {
-        return $this->nativeConnection ??= $this->connections->create($this->config);
+        return $this->amqpConnection ??= $this->connectionFactory->create($this->config);
     }
 
     private function discardIdlePublisherConnection(): void
     {
-        if (! $this->publisherChannel instanceof AMQPChannel || ! $this->nativeConnection instanceof AbstractConnection) {
+        if (! $this->publisherChannel instanceof AMQPChannel || ! $this->amqpConnection instanceof AbstractConnection) {
             return;
         }
 
-        $heartbeat = $this->nativeConnection->getHeartbeat();
-        $lastActivity = $this->nativeConnection->getLastActivity();
+        $heartbeat = $this->amqpConnection->getHeartbeat();
+        $lastActivity = $this->amqpConnection->getLastActivity();
 
         if (
             $heartbeat > 0
@@ -174,16 +174,16 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
 
     private function discardConnection(): void
     {
-        $native = $this->nativeConnection;
-        $this->nativeConnection = null;
+        $amqpConnection = $this->amqpConnection;
+        $this->amqpConnection = null;
         $this->publisherChannel = null;
 
-        if (! $native instanceof AbstractConnection) {
+        if (! $amqpConnection instanceof AbstractConnection) {
             return;
         }
 
         try {
-            $native->close();
+            $amqpConnection->close();
         } catch (Throwable) {
             // Preserve the operation failure that made this connection unusable.
         }

@@ -11,10 +11,10 @@ use PhpAmqpLib\Exception\AMQPTimeoutException;
 use PhpAmqpLib\Message\AMQPMessage;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
-use Spoolrail\Spoolrail\Exceptions\InvalidPhysicalNameException;
-use Spoolrail\Spoolrail\Exceptions\InvalidRabbitMqTopicNameException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqConsumerCancelledException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqPublicationRejectedException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqQueueNameTooLongException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqTopicNameTooLongException;
 use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
@@ -104,7 +104,7 @@ test('rejects an over-limit topic before opening a connection', function (): voi
     $factory->shouldNotReceive('create');
 
     expect(fn () => rabbitMqDriver($factory)->publish(str_repeat('a', 256), '{}'))
-        ->toThrow(InvalidRabbitMqTopicNameException::class);
+        ->toThrow(RabbitMqTopicNameTooLongException::class);
 });
 
 test('rejects an over-limit queue before opening a connection', function (): void {
@@ -114,7 +114,7 @@ test('rejects an over-limit queue before opening a connection', function (): voi
     $factory->shouldNotReceive('create');
 
     expect(fn () => rabbitMqDriver($factory)->consume('orders', static function (): void {}))
-        ->toThrow(InvalidPhysicalNameException::class);
+        ->toThrow(RabbitMqQueueNameTooLongException::class);
 });
 
 test('turns a negative publisher confirmation into a publication rejection', function (): void {
@@ -197,7 +197,7 @@ test('refreshes an idle publisher connection before publishing again', function 
 test('acknowledges a delivery only after the handoff returns', function (): void {
     // --- Arrange ---
     $events = [];
-    $expectedQueue = app(OwnershipPrefix::class)->value().'-order-imports';
+    $expectedQueue = app(OwnershipPrefix::class)->current().'-order-imports';
     $channel = Mockery::mock(AMQPChannel::class);
     $native = Mockery::mock(AbstractConnection::class);
     $factory = Mockery::mock(RabbitMqConnectionFactory::class);
@@ -353,13 +353,13 @@ function rabbitMqDriver(
     int $publisherConfirmTimeout = 60,
     int $prefetch = 10,
 ): RabbitMqDriver {
-    $configuration = [
+    $config = [
         'publisher_confirm_timeout' => $publisherConfirmTimeout,
         'prefetch' => $prefetch,
     ];
 
     return new RabbitMqDriver(
-        new RabbitMqConnectionConfig('rabbitmq', $configuration),
+        new RabbitMqConnectionConfig('rabbitmq', $config),
         $factory,
         Mockery::mock(ManagedTopology::class),
         app(OwnershipPrefix::class),

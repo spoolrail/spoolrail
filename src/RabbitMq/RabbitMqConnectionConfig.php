@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\RabbitMq;
 
 use Illuminate\Support\Arr;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigException;
 
 readonly class RabbitMqConnectionConfig
 {
     /**
-     * @param  array<array-key, mixed>  $configuration
+     * @param  array<array-key, mixed>  $config
      */
     public function __construct(
-        public string $connection,
-        private array $configuration,
+        public string $connectionName,
+        private array $config,
     ) {
         $this->scheme();
         $this->hosts();
@@ -22,11 +22,11 @@ readonly class RabbitMqConnectionConfig
 
     public function scheme(): string
     {
-        $scheme = Arr::string($this->configuration, 'scheme', 'amqp');
+        $scheme = Arr::string($this->config, 'scheme', 'amqp');
 
         if (! in_array($scheme, ['amqp', 'amqps'], true)) {
-            throw RabbitMqConfigurationException::invalid(
-                $this->connection,
+            throw RabbitMqConfigException::invalid(
+                $this->connectionName,
                 'scheme',
                 'must be [amqp] or [amqps]',
             );
@@ -40,19 +40,19 @@ readonly class RabbitMqConnectionConfig
      */
     public function hosts(): array
     {
-        if (array_key_exists('host', $this->configuration) && array_key_exists('hosts', $this->configuration)) {
-            throw RabbitMqConfigurationException::invalid(
-                $this->connection,
+        if (array_key_exists('host', $this->config) && array_key_exists('hosts', $this->config)) {
+            throw RabbitMqConfigException::invalid(
+                $this->connectionName,
                 'hosts',
                 'cannot be configured together with [host]',
             );
         }
 
-        $hosts = Arr::wrap($this->configuration['hosts'] ?? $this->configuration['host'] ?? '127.0.0.1');
+        $hosts = Arr::wrap($this->config['hosts'] ?? $this->config['host'] ?? '127.0.0.1');
 
         if ($hosts === []) {
-            throw RabbitMqConfigurationException::invalid(
-                $this->connection,
+            throw RabbitMqConfigException::invalid(
+                $this->connectionName,
                 'hosts',
                 'must be a non-empty list of hostnames',
             );
@@ -71,23 +71,23 @@ readonly class RabbitMqConnectionConfig
 
     public function username(): string
     {
-        return Arr::string($this->configuration, 'username', 'guest');
+        return Arr::string($this->config, 'username', 'guest');
     }
 
     public function password(): string
     {
-        return Arr::string($this->configuration, 'password', 'guest');
+        return Arr::string($this->config, 'password', 'guest');
     }
 
     public function virtualHost(): string
     {
-        return Arr::string($this->configuration, 'vhost', '/');
+        return Arr::string($this->config, 'vhost', '/');
     }
 
     public function caFile(): ?string
     {
-        return isset($this->configuration['ca_file'])
-            ? Arr::string($this->configuration, 'ca_file')
+        return isset($this->config['ca_file'])
+            ? Arr::string($this->config, 'ca_file')
             : null;
     }
 
@@ -113,24 +113,24 @@ readonly class RabbitMqConnectionConfig
 
     public function management(): RabbitMqManagementConfig
     {
-        $configuration = Arr::array($this->configuration, 'management', []);
+        $config = Arr::array($this->config, 'management', []);
 
         return new RabbitMqManagementConfig(
-            $this->managementUrl($configuration),
-            Arr::string($configuration, 'username', $this->username()),
-            Arr::string($configuration, 'password', $this->password()),
-            isset($configuration['ca_file'])
-                ? Arr::string($configuration, 'ca_file')
+            $this->managementUrl($config),
+            Arr::string($config, 'username', $this->username()),
+            Arr::string($config, 'password', $this->password()),
+            isset($config['ca_file'])
+                ? Arr::string($config, 'ca_file')
                 : null,
         );
     }
 
     /**
-     * @param  array<array-key, mixed>  $configuration
+     * @param  array<array-key, mixed>  $config
      */
-    private function managementUrl(array $configuration): string
+    private function managementUrl(array $config): string
     {
-        $url = Arr::string($configuration, 'url', 'http://127.0.0.1:15672');
+        $url = Arr::string($config, 'url', 'http://127.0.0.1:15672');
         $parts = parse_url($url);
 
         if (
@@ -142,8 +142,8 @@ readonly class RabbitMqConnectionConfig
             || isset($parts['query'])
             || isset($parts['fragment'])
         ) {
-            throw RabbitMqConfigurationException::invalid(
-                $this->connection,
+            throw RabbitMqConfigException::invalid(
+                $this->connectionName,
                 'management.url',
                 'must be an HTTP or HTTPS endpoint without embedded credentials, query, or fragment',
             );
@@ -155,7 +155,7 @@ readonly class RabbitMqConnectionConfig
     private function integer(string $key, int $default): int
     {
         /** @var int|numeric-string $value */
-        $value = $this->configuration[$key] ?? $default;
+        $value = $this->config[$key] ?? $default;
 
         return (int) $value;
     }

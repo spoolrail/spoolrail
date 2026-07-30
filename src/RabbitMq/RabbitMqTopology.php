@@ -14,8 +14,8 @@ use Spoolrail\Spoolrail\Subscriptions\Subscription;
 readonly class RabbitMqTopology implements ManagedTopology
 {
     public function __construct(
-        private RabbitMqConnectionConfig $connection,
-        private RabbitMqManagementClient $management,
+        private RabbitMqConnectionConfig $config,
+        private RabbitMqManagementClient $managementClient,
     ) {}
 
     /**
@@ -23,9 +23,9 @@ readonly class RabbitMqTopology implements ManagedTopology
      */
     public function planSync(array $subscriptions, string $ownershipPrefix): TopologyPlan
     {
-        $resources = array_map(
+        $requiredBindings = array_map(
             static fn (Subscription $subscription): array => [
-                'topic' => RabbitMqName::topic($subscription->topic()),
+                'exchange' => RabbitMqName::topic($subscription->topic()),
                 'queue' => RabbitMqName::queue($ownershipPrefix, $subscription->name()),
             ],
             $subscriptions,
@@ -34,29 +34,29 @@ readonly class RabbitMqTopology implements ManagedTopology
         $this->assertSupportedVersion();
 
         $defaultQueueType = null;
-        $policies = $this->management->policies();
-        $operatorPolicies = $this->management->operatorPolicies();
+        $policies = $this->managementClient->policies();
+        $operatorPolicies = $this->managementClient->operatorPolicies();
         $missingExchanges = [];
         $missingQueues = [];
         $missingBindings = [];
         $inspectedExchanges = [];
 
-        foreach ($resources as $resource) {
-            $topic = $resource['topic'];
-            $queueName = $resource['queue'];
+        foreach ($requiredBindings as $requiredBinding) {
+            $exchangeName = $requiredBinding['exchange'];
+            $queueName = $requiredBinding['queue'];
 
-            if (! isset($inspectedExchanges[$topic])) {
-                if ($this->inspectExchange($topic)) {
-                    $missingExchanges[] = $topic;
+            if (! isset($inspectedExchanges[$exchangeName])) {
+                if ($this->isExchangeMissing($exchangeName)) {
+                    $missingExchanges[] = $exchangeName;
                 }
 
-                $inspectedExchanges[$topic] = true;
+                $inspectedExchanges[$exchangeName] = true;
             }
 
-            $queue = $this->management->queue($queueName);
+            $queue = $this->managementClient->queue($queueName);
 
             if ($queue === null) {
-                $arguments = $this->missingQueueArguments(
+                $arguments = $this->queueDeclarationArguments(
                     $queueName,
                     $defaultQueueType ??= $this->defaultQueueType(),
                     $policies,
@@ -67,7 +67,7 @@ readonly class RabbitMqTopology implements ManagedTopology
                     'arguments' => $arguments,
                 ];
                 $missingBindings[] = [
-                    'exchange' => $topic,
+                    'exchange' => $exchangeName,
                     'queue' => $queueName,
                 ];
 
@@ -81,16 +81,16 @@ readonly class RabbitMqTopology implements ManagedTopology
                 $operatorPolicies,
             );
 
-            if ($this->inspectBindings($queueName, $topic)) {
+            if ($this->isBindingMissing($queueName, $exchangeName)) {
                 $missingBindings[] = [
-                    'exchange' => $topic,
+                    'exchange' => $exchangeName,
                     'queue' => $queueName,
                 ];
             }
         }
 
         return new RabbitMqTopologyPlan(
-            $this->management,
+            $this->managementClient,
             $missingExchanges,
             $missingQueues,
             $missingBindings,
@@ -99,43 +99,43 @@ readonly class RabbitMqTopology implements ManagedTopology
 
     /**
      * @param  list<Subscription>  $subscriptions
-     * @return list<string>
+     * @return list<string> Physical subscription resource names not represented by the declarations
      */
-    public function undeclaredSubscriptions(
+    public function undeclaredSubscriptionResourceNames(
         array $subscriptions,
         string $ownershipPrefix,
     ): array {
-        $namespace = "$ownershipPrefix-";
-        $declared = [];
+        $ownershipNamespace = "$ownershipPrefix-";
+        $declaredQueueNames = [];
 
         foreach ($subscriptions as $subscription) {
-            $declared[RabbitMqName::queue($ownershipPrefix, $subscription->name())] = true;
+            $declaredQueueNames[RabbitMqName::queue($ownershipPrefix, $subscription->name())] = true;
         }
 
         $this->assertSupportedVersion();
 
-        $undeclared = [];
+        $undeclaredQueueNames = [];
 
-        foreach ($this->management->queuesOwnedBy($ownershipPrefix) as $queue) {
-            $name = $queue['name'] ?? null;
+        foreach ($this->managementClient->queuesOwnedBy($ownershipPrefix) as $queue) {
+            $queueName = $queue['name'] ?? null;
 
             if (
-                is_string($name)
-                && str_starts_with($name, $namespace)
-                && ! isset($declared[$name])
+                is_string($queueName)
+                && str_starts_with($queueName, $ownershipNamespace)
+                && ! isset($declaredQueueNames[$queueName])
             ) {
-                $undeclared[] = $name;
+                $undeclaredQueueNames[] = $queueName;
             }
         }
 
-        sort($undeclared);
+        sort($undeclaredQueueNames);
 
-        return $undeclared;
+        return $undeclaredQueueNames;
     }
 
     public function deleteSubscription(string $physicalName): void
     {
-        $this->management->deleteQueue($physicalName);
+        $this->managementClient->deleteQueue($physicalName);
     }
 
     public function deleteTopic(string $topic): void
@@ -143,7 +143,7 @@ readonly class RabbitMqTopology implements ManagedTopology
         RabbitMqName::topic($topic);
         $this->assertSupportedVersion();
 
-        $exchange = $this->management->exchange($topic);
+        $exchange = $this->managementClient->exchange($topic);
 
         if ($exchange === null) {
             throw RabbitMqTopologyException::topicMissing($topic);
@@ -152,22 +152,22 @@ readonly class RabbitMqTopology implements ManagedTopology
         $this->assertCompatibleExchange($topic, $exchange);
 
         if (
-            $this->management->exchangeSourceBindings($topic) !== []
-            || $this->management->exchangeDestinationBindings($topic) !== []
+            $this->managementClient->exchangeSourceBindings($topic) !== []
+            || $this->managementClient->exchangeDestinationBindings($topic) !== []
         ) {
             throw RabbitMqTopologyException::topicHasBindings($topic);
         }
 
-        $this->management->deleteExchangeIfUnused($topic);
+        $this->managementClient->deleteExchangeIfUnused($topic);
     }
 
     private function assertSupportedVersion(): void
     {
-        $version = $this->management->overview()['rabbitmq_version'] ?? null;
+        $version = $this->managementClient->overview()['rabbitmq_version'] ?? null;
 
         if (! is_string($version)) {
             throw RabbitMqManagementException::invalidResponse(
-                $this->connection->connection,
+                $this->config->connectionName,
                 'reading the broker version',
             );
         }
@@ -179,7 +179,7 @@ readonly class RabbitMqTopology implements ManagedTopology
 
     private function defaultQueueType(): string
     {
-        $type = $this->management->virtualHost()['default_queue_type'] ?? null;
+        $type = $this->managementClient->virtualHost()['default_queue_type'] ?? null;
 
         if (! in_array($type, ['classic', 'quorum'], true)) {
             throw RabbitMqTopologyException::unsupportedDefaultQueueType(
@@ -193,15 +193,15 @@ readonly class RabbitMqTopology implements ManagedTopology
     /**
      * @return bool Whether the exchange must be created.
      */
-    private function inspectExchange(string $topic): bool
+    private function isExchangeMissing(string $exchangeName): bool
     {
-        $exchange = $this->management->exchange($topic);
+        $exchange = $this->managementClient->exchange($exchangeName);
 
         if ($exchange === null) {
             return true;
         }
 
-        $this->assertCompatibleExchange($topic, $exchange);
+        $this->assertCompatibleExchange($exchangeName, $exchange);
 
         return false;
     }
@@ -209,7 +209,7 @@ readonly class RabbitMqTopology implements ManagedTopology
     /**
      * @param  array<string, mixed>  $exchange
      */
-    private function assertCompatibleExchange(string $topic, array $exchange): void
+    private function assertCompatibleExchange(string $exchangeName, array $exchange): void
     {
         $requirements = [
             'type' => 'fanout',
@@ -221,7 +221,7 @@ readonly class RabbitMqTopology implements ManagedTopology
         foreach ($requirements as $setting => $required) {
             if (($exchange[$setting] ?? null) !== $required) {
                 throw RabbitMqTopologyException::incompatibleExchange(
-                    $topic,
+                    $exchangeName,
                     "[$setting] must be ".var_export($required, true),
                 );
             }
@@ -233,8 +233,8 @@ readonly class RabbitMqTopology implements ManagedTopology
      * @param  list<array<string, mixed>>  $operatorPolicies
      * @return array<string, int|string>
      */
-    private function missingQueueArguments(
-        string $queue,
+    private function queueDeclarationArguments(
+        string $queueName,
         string $defaultQueueType,
         array $policies,
         array $operatorPolicies,
@@ -245,12 +245,12 @@ readonly class RabbitMqTopology implements ManagedTopology
 
         foreach ([$operatorPolicies, $policies] as $policySet) {
             $limit = $this->applicableDeliveryLimit(
-                $queue,
+                $queueName,
                 $policySet,
             );
 
             if ($limit !== null && $limit !== -1) {
-                throw RabbitMqTopologyException::finiteDeliveryLimit($queue, $limit);
+                throw RabbitMqTopologyException::finiteDeliveryLimit($queueName, $limit);
             }
         }
 
@@ -263,7 +263,7 @@ readonly class RabbitMqTopology implements ManagedTopology
      * @param  list<array<string, mixed>>  $operatorPolicies
      */
     private function assertCompatibleQueue(
-        string $name,
+        string $queueName,
         array $queue,
         array $policies,
         array $operatorPolicies,
@@ -277,7 +277,7 @@ readonly class RabbitMqTopology implements ManagedTopology
         foreach ($requirements as $setting => $required) {
             if (($queue[$setting] ?? null) !== $required) {
                 throw RabbitMqTopologyException::incompatibleQueue(
-                    $name,
+                    $queueName,
                     "[$setting] must be ".var_export($required, true),
                 );
             }
@@ -287,14 +287,14 @@ readonly class RabbitMqTopology implements ManagedTopology
 
         if (! in_array($type, ['classic', 'quorum'], true)) {
             throw RabbitMqTopologyException::incompatibleQueue(
-                $name,
+                $queueName,
                 'queue type must be classic or quorum',
             );
         }
 
         if ($type === 'quorum') {
             $this->assertUnlimitedDeliveryLimit(
-                $name,
+                $queueName,
                 $queue,
                 $policies,
                 $operatorPolicies,
@@ -308,25 +308,25 @@ readonly class RabbitMqTopology implements ManagedTopology
      * @param  list<array<string, mixed>>  $operatorPolicies
      */
     private function assertUnlimitedDeliveryLimit(
-        string $name,
+        string $queueName,
         array $queue,
         array $policies,
         array $operatorPolicies,
     ): void {
         $arguments = $queue['arguments'] ?? [];
         $declaredLimit = is_array($arguments)
-            ? $this->integerValue($arguments['x-delivery-limit'] ?? null)
+            ? $this->integerOrNull($arguments['x-delivery-limit'] ?? null)
             : null;
 
         $limits = [
             $declaredLimit,
-            $this->applicableDeliveryLimit($name, $policies),
-            $this->applicableDeliveryLimit($name, $operatorPolicies),
+            $this->applicableDeliveryLimit($queueName, $policies),
+            $this->applicableDeliveryLimit($queueName, $operatorPolicies),
         ];
 
         foreach ($limits as $limit) {
             if ($limit !== null && $limit !== -1) {
-                throw RabbitMqTopologyException::finiteDeliveryLimit($name, $limit);
+                throw RabbitMqTopologyException::finiteDeliveryLimit($queueName, $limit);
             }
         }
 
@@ -334,16 +334,16 @@ readonly class RabbitMqTopology implements ManagedTopology
             return;
         }
 
-        throw RabbitMqTopologyException::indeterminateDeliveryLimit($name);
+        throw RabbitMqTopologyException::indeterminateDeliveryLimit($queueName);
     }
 
     /**
      * @return bool Whether the required binding must be created.
      */
-    private function inspectBindings(string $queue, string $topic): bool
+    private function isBindingMissing(string $queueName, string $exchangeName): bool
     {
         $bindings = array_values(array_filter(
-            $this->management->queueBindings($queue),
+            $this->managementClient->queueBindings($queueName),
             static fn (array $binding): bool => ($binding['source'] ?? null) !== '',
         ));
 
@@ -352,19 +352,19 @@ readonly class RabbitMqTopology implements ManagedTopology
         }
 
         if (count($bindings) !== 1) {
-            throw RabbitMqTopologyException::incompatibleBindings($queue, $topic);
+            throw RabbitMqTopologyException::incompatibleBindings($queueName, $exchangeName);
         }
 
         $binding = $bindings[0];
         $arguments = $binding['arguments'] ?? [];
 
         if (
-            ($binding['source'] ?? null) !== $topic
+            ($binding['source'] ?? null) !== $exchangeName
             || ($binding['destination_type'] ?? null) !== 'queue'
             || ($binding['routing_key'] ?? null) !== ''
             || $arguments !== []
         ) {
-            throw RabbitMqTopologyException::incompatibleBindings($queue, $topic);
+            throw RabbitMqTopologyException::incompatibleBindings($queueName, $exchangeName);
         }
 
         return false;
@@ -374,12 +374,12 @@ readonly class RabbitMqTopology implements ManagedTopology
      * @param  list<array<string, mixed>>  $policies
      */
     private function applicableDeliveryLimit(
-        string $queue,
+        string $queueName,
         array $policies,
     ): ?int {
         $applicable = array_values(array_filter(
             $policies,
-            fn (array $policy): bool => $this->policyApplies($policy, $queue),
+            fn (array $policy): bool => $this->policyApplies($policy, $queueName),
         ));
 
         usort(
@@ -421,7 +421,7 @@ readonly class RabbitMqTopology implements ManagedTopology
     /**
      * @param  array<string, mixed>  $policy
      */
-    private function policyApplies(array $policy, string $queue): bool
+    private function policyApplies(array $policy, string $queueName): bool
     {
         $applyTo = $policy['apply-to'] ?? null;
 
@@ -433,15 +433,15 @@ readonly class RabbitMqTopology implements ManagedTopology
         }
 
         $pattern = $policy['pattern'];
-        $result = @preg_match('~'.str_replace('~', '\~', $pattern).'~', $queue);
+        $match = @preg_match('~'.str_replace('~', '\~', $pattern).'~', $queueName);
 
-        if ($result === false) {
+        if ($match === false) {
             throw RabbitMqTopologyException::invalidPolicy(
                 is_string($policy['name'] ?? null) ? $policy['name'] : 'unknown',
             );
         }
 
-        return $result === 1;
+        return $match === 1;
     }
 
     /**
@@ -452,11 +452,11 @@ readonly class RabbitMqTopology implements ManagedTopology
         $definition = $policy['definition'] ?? null;
 
         return is_array($definition)
-            ? $this->integerValue($definition['delivery-limit'] ?? null)
+            ? $this->integerOrNull($definition['delivery-limit'] ?? null)
             : null;
     }
 
-    private function integerValue(mixed $value): ?int
+    private function integerOrNull(mixed $value): ?int
     {
         return is_int($value) ? $value : null;
     }

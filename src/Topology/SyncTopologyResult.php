@@ -7,11 +7,11 @@ namespace Spoolrail\Spoolrail\Topology;
 readonly class SyncTopologyResult
 {
     /**
-     * @param  list<string>  $managedConnections
-     * @param  list<string>  $unmanagedConnections
+     * @param  list<string>  $managedConnectionNames
+     * @param  list<string>  $unmanagedConnectionNames
      */
     public function __construct(
-        public array $managedConnections,
-        public array $unmanagedConnections,
+        public array $managedConnectionNames,
+        public array $unmanagedConnectionNames,
     ) {}
 }

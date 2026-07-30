@@ -2,23 +2,23 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Exceptions\InvalidConfigurationException;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 
 test('resolves and caches each configured ArrayDriver connection', function (): void {
     config()->set('spoolrail.connections.secondary', ['driver' => 'array']);
 
-    $default = Spoolrail::connection();
-    $secondary = Spoolrail::connection('secondary');
+    $defaultConnection = Spoolrail::connection();
+    $secondaryConnection = Spoolrail::connection('secondary');
 
-    expect(Spoolrail::connection())->toBe($default);
-    expect(Spoolrail::connection('secondary'))->toBe($secondary);
-    expect($secondary)->not->toBe($default);
+    expect(Spoolrail::connection())->toBe($defaultConnection);
+    expect(Spoolrail::connection('secondary'))->toBe($secondaryConnection);
+    expect($secondaryConnection)->not->toBe($defaultConnection);
 });
 
 test('rejects an undefined connection', function (): void {
     expect(fn () => Spoolrail::connection('missing'))
-        ->toThrow(InvalidConfigurationException::class, 'Spoolrail connection [missing] is not defined.');
+        ->toThrow(InvalidConfigException::class, 'Spoolrail connection [missing] is not defined.');
 });
 
 test('rejects an invalid default connection', function (): void {
@@ -26,18 +26,18 @@ test('rejects an invalid default connection', function (): void {
 
     expect(fn () => Spoolrail::connection())
         ->toThrow(
-            InvalidConfigurationException::class,
+            InvalidConfigException::class,
             'Spoolrail default connection must be a non-empty string.',
         );
 });
 
-test('rejects a connection whose configuration is not an array', function (): void {
+test('rejects a connection whose config is not an array', function (): void {
     config()->set('spoolrail.connections.invalid', 'array');
 
     expect(fn () => Spoolrail::connection('invalid'))
         ->toThrow(
-            InvalidConfigurationException::class,
-            'Spoolrail connection [invalid] configuration must be an array.',
+            InvalidConfigException::class,
+            'Spoolrail connection [invalid] config must be an array.',
         );
 });
 
@@ -48,7 +48,7 @@ test('rejects a connection without a declared driver', function (): void {
 
     expect(fn () => Spoolrail::connection('invalid'))
         ->toThrow(
-            InvalidConfigurationException::class,
+            InvalidConfigException::class,
             'Spoolrail connection [invalid] must define a non-empty string [driver].',
         );
 });
@@ -59,5 +59,5 @@ test('rejects an unsupported driver', function (): void {
     ]);
 
     expect(fn () => Spoolrail::connection('invalid'))
-        ->toThrow(InvalidConfigurationException::class, 'Spoolrail driver [missing] is not supported.');
+        ->toThrow(InvalidConfigException::class, 'Spoolrail driver [missing] is not supported.');
 });

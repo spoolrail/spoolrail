@@ -28,30 +28,30 @@ class HandlerQueuePolicy
     private const string FAIL_ON_TIMEOUT_ATTRIBUTE = FailOnTimeout::class;
 
     /**
-     * @param  class-string<MessageHandler>  $handler
+     * @param  class-string<MessageHandler>  $handlerClass
      *
      * @throws Throwable
      */
-    public function apply(string $handler, Message $message, HandleMessageJob $job): void
+    public function capture(string $handlerClass, Message $message, HandleMessageJob $job): void
     {
-        $instance = new ReflectionClass($handler)->newInstanceWithoutConstructor();
+        $handler = new ReflectionClass($handlerClass)->newInstanceWithoutConstructor();
 
-        $job->tries = method_exists($instance, 'tries')
-            ? $instance->tries()
-            : $this->attributeOrProperty($instance, self::TRIES_ATTRIBUTE, 'tries');
-        $job->backoff = method_exists($instance, 'backoff')
-            ? $instance->backoff()
-            : $this->attributeOrProperty($instance, self::BACKOFF_ATTRIBUTE, 'backoff');
-        $job->maxExceptions = $this->attributeOrProperty($instance, self::MAX_EXCEPTIONS_ATTRIBUTE, 'maxExceptions');
-        $job->timeout = $this->attributeOrProperty($instance, self::TIMEOUT_ATTRIBUTE, 'timeout');
-        $job->failOnTimeout = $this->attributeOrProperty($instance, self::FAIL_ON_TIMEOUT_ATTRIBUTE, 'failOnTimeout') ?? false;
-        $job->retryUntil = method_exists($instance, 'retryUntil') ? $instance->retryUntil() : null;
-        $job->middleware = method_exists($instance, 'middleware') ? $instance->middleware($message) : [];
+        $job->tries = method_exists($handler, 'tries')
+            ? $handler->tries()
+            : $this->policyValue($handler, self::TRIES_ATTRIBUTE, 'tries');
+        $job->backoff = method_exists($handler, 'backoff')
+            ? $handler->backoff()
+            : $this->policyValue($handler, self::BACKOFF_ATTRIBUTE, 'backoff');
+        $job->maxExceptions = $this->policyValue($handler, self::MAX_EXCEPTIONS_ATTRIBUTE, 'maxExceptions');
+        $job->timeout = $this->policyValue($handler, self::TIMEOUT_ATTRIBUTE, 'timeout');
+        $job->failOnTimeout = $this->policyValue($handler, self::FAIL_ON_TIMEOUT_ATTRIBUTE, 'failOnTimeout') ?? false;
+        $job->retryUntil = method_exists($handler, 'retryUntil') ? $handler->retryUntil() : null;
+        $job->middleware = method_exists($handler, 'middleware') ? $handler->middleware($message) : [];
     }
 
-    private function attributeOrProperty(object $handler, string $attribute, string $property): mixed
+    private function policyValue(object $handler, string $attributeClass, string $property): mixed
     {
-        if (! class_exists($attribute)) {
+        if (! class_exists($attributeClass)) {
             return $handler->{$property} ?? null;
         }
 
@@ -62,19 +62,19 @@ class HandlerQueuePolicy
             return $handler->{$property};
         }
 
-        $resolvedAttribute = $this->attributeInstance($reflection, $attribute);
+        $resolvedAttribute = $this->nearestAttribute($reflection, $attributeClass);
 
         if ($resolvedAttribute === null) {
             return $handler->{$property} ?? null;
         }
 
-        [$instance, $declaringClass] = $resolvedAttribute;
+        [$attribute, $declaringClass] = $resolvedAttribute;
 
         if ($this->propertyOverridesInheritedAttribute($handler, $reflection, $property, $declaringClass)) {
             return $handler->{$property};
         }
 
-        $values = get_object_vars($instance);
+        $values = get_object_vars($attribute);
 
         return $values === [] ? true : reset($values);
     }
@@ -83,20 +83,20 @@ class HandlerQueuePolicy
      * @param  ReflectionClass<object>  $reflection
      * @return array{object, class-string}|null
      */
-    private function attributeInstance(
+    private function nearestAttribute(
         ReflectionClass $reflection,
-        string $attribute,
+        string $attributeClass,
     ): ?array {
         try {
             do {
-                $attributes = $reflection->getAttributes($attribute);
+                $attributes = $reflection->getAttributes($attributeClass);
 
                 if ($attributes !== []) {
                     return [$attributes[0]->newInstance(), $reflection->getName()];
                 }
 
                 foreach ($reflection->getTraits() as $trait) {
-                    $attributes = $trait->getAttributes($attribute);
+                    $attributes = $trait->getAttributes($attributeClass);
 
                     if ($attributes !== []) {
                         return [$attributes[0]->newInstance(), $reflection->getName()];
