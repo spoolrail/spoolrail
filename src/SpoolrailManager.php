@@ -21,6 +21,7 @@ use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
 class SpoolrailManager
 {

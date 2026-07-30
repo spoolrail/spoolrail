@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\LogicalName;
+use Spoolrail\Spoolrail\Topology\LogicalName;
 
 test('accepts the portable logical-name grammar', function (string $name): void {
     expect(LogicalName::isValid($name))->toBeTrue();

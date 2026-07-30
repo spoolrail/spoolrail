@@ -7,7 +7,7 @@ namespace Spoolrail\Spoolrail\Subscriptions;
 use Closure;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
-use Spoolrail\Spoolrail\LogicalName;
+use Spoolrail\Spoolrail\Topology\LogicalName;
 
 class Subscription
 {

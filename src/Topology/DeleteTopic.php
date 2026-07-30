@@ -6,7 +6,6 @@ namespace Spoolrail\Spoolrail\Topology;
 
 use Spoolrail\Spoolrail\Exceptions\InvalidTopicException;
 use Spoolrail\Spoolrail\Exceptions\ManagedTopologyUnavailableException;
-use Spoolrail\Spoolrail\LogicalName;
 use Spoolrail\Spoolrail\SpoolrailManager;
 
 readonly class DeleteTopic

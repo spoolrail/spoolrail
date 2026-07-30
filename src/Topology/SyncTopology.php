@@ -6,7 +6,6 @@ namespace Spoolrail\Spoolrail\Topology;
 
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;

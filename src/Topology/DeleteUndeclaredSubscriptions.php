@@ -6,7 +6,6 @@ namespace Spoolrail\Spoolrail\Topology;
 
 use Spoolrail\Spoolrail\Exceptions\CurrentOwnershipPrefixCannotBeRetiredException;
 use Spoolrail\Spoolrail\Exceptions\ManagedTopologyUnavailableException;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;

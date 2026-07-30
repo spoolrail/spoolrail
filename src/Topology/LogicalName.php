@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Spoolrail\Spoolrail;
+namespace Spoolrail\Spoolrail\Topology;
 
 class LogicalName
 {

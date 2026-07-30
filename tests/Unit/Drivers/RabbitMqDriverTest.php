@@ -15,9 +15,9 @@ use Spoolrail\Spoolrail\Exceptions\RabbitMqConsumerCancelledException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqPublicationRejectedException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqQueueNameTooLongException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopicNameTooLongException;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
+use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
 test('publishes a persistent message and waits for its confirmation', function (): void {
     $channel = Mockery::mock(AMQPChannel::class);

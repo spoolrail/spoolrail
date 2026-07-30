@@ -14,11 +14,11 @@ use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqConsumerCancelledException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqPublicationRejectedException;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqName;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
+use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 use Throwable;
 
 class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology

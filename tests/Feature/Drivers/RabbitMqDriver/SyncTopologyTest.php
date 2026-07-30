@@ -7,9 +7,9 @@ use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageSerializer;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
+use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
 uses(InteractsWithRabbitMq::class);
 

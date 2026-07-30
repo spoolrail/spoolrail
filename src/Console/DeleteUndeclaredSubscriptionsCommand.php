@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Console;
 
 use Illuminate\Console\Command;
-use Spoolrail\Spoolrail\OwnershipPrefix;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Topology\DeleteUndeclaredSubscriptions;
+use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
 class DeleteUndeclaredSubscriptionsCommand extends Command
 {

@@ -23,7 +23,7 @@ test('interprets the complete RabbitMQ connection config', function (): void {
             'url' => 'https://rabbit.internal:15671/api/',
             'username' => 'topology',
             'password' => 'secret',
-            'ca_file' => __DIR__.'/../OwnershipPrefixTest.php',
+            'ca_file' => __DIR__.'/../Topology/OwnershipPrefixTest.php',
         ],
     ]);
 
@@ -43,7 +43,7 @@ test('interprets the complete RabbitMQ connection config', function (): void {
     expect($managementConfig->url)->toBe('https://rabbit.internal:15671/api');
     expect($managementConfig->username)->toBe('topology');
     expect($managementConfig->password)->toBe('secret');
-    expect($managementConfig->caFile)->toBe(__DIR__.'/../OwnershipPrefixTest.php');
+    expect($managementConfig->caFile)->toBe(__DIR__.'/../Topology/OwnershipPrefixTest.php');
 });
 
 test('applies RabbitMQ local defaults and keeps management TLS trust independent', function (): void {

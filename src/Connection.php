@@ -11,6 +11,7 @@ use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Exceptions\InvalidTopicException;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
+use Spoolrail\Spoolrail\Topology\LogicalName;
 
 class Connection
 {
