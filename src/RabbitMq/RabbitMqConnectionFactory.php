@@ -8,7 +8,7 @@ use Exception;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use PhpAmqpLib\Connection\AMQPConnectionFactory;
-use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 
 class RabbitMqConnectionFactory
 {
@@ -42,7 +42,7 @@ class RabbitMqConnectionFactory
         if (! is_string($version) || version_compare($version, RabbitMqVersion::MINIMUM, '<')) {
             $amqpConnection->close();
 
-            throw new UnsupportedRabbitMqVersionException(is_string($version) ? $version : 'unknown');
+            throw RabbitMqTopologyException::unsupportedVersion(is_string($version) ? $version : 'unknown');
         }
     }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\RabbitMq;
 
 use Illuminate\Support\Arr;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigException;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 
 readonly class RabbitMqConnectionConfig
 {
@@ -25,7 +25,7 @@ readonly class RabbitMqConnectionConfig
         $scheme = Arr::string($this->config, 'scheme', 'amqp');
 
         if (! in_array($scheme, ['amqp', 'amqps'], true)) {
-            throw RabbitMqConfigException::invalid(
+            throw InvalidConfigException::rabbitMqSetting(
                 $this->connectionName,
                 'scheme',
                 'must be [amqp] or [amqps]',
@@ -41,7 +41,7 @@ readonly class RabbitMqConnectionConfig
     public function hosts(): array
     {
         if (array_key_exists('host', $this->config) && array_key_exists('hosts', $this->config)) {
-            throw RabbitMqConfigException::invalid(
+            throw InvalidConfigException::rabbitMqSetting(
                 $this->connectionName,
                 'hosts',
                 'cannot be configured together with [host]',
@@ -51,7 +51,7 @@ readonly class RabbitMqConnectionConfig
         $hosts = Arr::wrap($this->config['hosts'] ?? $this->config['host'] ?? '127.0.0.1');
 
         if ($hosts === []) {
-            throw RabbitMqConfigException::invalid(
+            throw InvalidConfigException::rabbitMqSetting(
                 $this->connectionName,
                 'hosts',
                 'must be a non-empty list of hostnames',
@@ -142,7 +142,7 @@ readonly class RabbitMqConnectionConfig
             || isset($parts['query'])
             || isset($parts['fragment'])
         ) {
-            throw RabbitMqConfigException::invalid(
+            throw InvalidConfigException::rabbitMqSetting(
                 $this->connectionName,
                 'management.url',
                 'must be an HTTP or HTTPS endpoint without embedded credentials, query, or fragment',

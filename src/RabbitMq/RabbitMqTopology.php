@@ -8,7 +8,6 @@ use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
-use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 
 readonly class RabbitMqTopology implements ManagedTopology
@@ -173,7 +172,7 @@ readonly class RabbitMqTopology implements ManagedTopology
         }
 
         if (version_compare($version, RabbitMqVersion::MINIMUM, '<')) {
-            throw new UnsupportedRabbitMqVersionException($version);
+            throw RabbitMqTopologyException::unsupportedVersion($version);
         }
     }
 

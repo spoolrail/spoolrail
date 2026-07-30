@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Exceptions\CurrentOwnershipPrefixCannotBeRetiredException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
@@ -78,5 +77,5 @@ test('refuses to delete the current ownership prefix as retired', function (): v
         "spoolrail:delete-undeclared-subscriptions --connection=rabbitmq --retired-prefix=$prefix",
     )->run();
 
-    expect($action)->toThrow(CurrentOwnershipPrefixCannotBeRetiredException::class);
+    expect($action)->toThrow(InvalidArgumentException::class);
 });

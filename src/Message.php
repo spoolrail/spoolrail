@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail;
 
 use Carbon\CarbonImmutable;
+use InvalidArgumentException;
 use Ramsey\Uuid\Uuid;
-use Spoolrail\Spoolrail\Exceptions\InvalidMessageException;
 
 readonly class Message
 {
@@ -26,7 +26,7 @@ readonly class Message
     public static function make(string $type, array $payload): self
     {
         if (trim($type) === '') {
-            throw InvalidMessageException::emptyType();
+            throw new InvalidArgumentException('The message type must not be empty.');
         }
 
         return new self(

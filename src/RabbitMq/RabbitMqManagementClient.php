@@ -393,7 +393,7 @@ class RabbitMqManagementClient
             throw RabbitMqManagementException::requestFailed(
                 $this->config->connectionName,
                 $operation,
-                $exception->getMessage(),
+                $exception,
             );
         }
 

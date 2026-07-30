@@ -12,8 +12,9 @@ use Spoolrail\Spoolrail\Contracts\ClosableDriver;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConsumerCancelledException;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqPublicationRejectedException;
+use Spoolrail\Spoolrail\Exceptions\ConsumptionException;
+use Spoolrail\Spoolrail\Exceptions\PublicationException;
+use Spoolrail\Spoolrail\Exceptions\SpoolrailException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqName;
@@ -26,6 +27,8 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
     private ?AbstractConnection $amqpConnection = null;
 
     private ?AMQPChannel $publisherChannel = null;
+
+    private ?Throwable $handoffFailure = null;
 
     public function __construct(
         private readonly RabbitMqConnectionConfig $config,
@@ -42,22 +45,35 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
     public function publish(string $topic, string $body): void
     {
         RabbitMqName::topic($topic);
-        $this->discardIdlePublisherConnection();
 
         try {
+            $this->discardIdlePublisherConnection();
             $channel = $this->publisherChannel();
-            $channel->basic_publish(
-                new AMQPMessage($body, [
-                    'content_type' => 'application/json',
-                    'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
-                ]),
-                $topic,
-            );
-            $channel->wait_for_pending_acks($this->config->publisherConfirmTimeout());
-        } catch (Throwable $exception) {
+            $message = new AMQPMessage($body, [
+                'content_type' => 'application/json',
+                'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
+            ]);
+        } catch (SpoolrailException $exception) {
             $this->discardConnection();
 
             throw $exception;
+        } catch (Throwable $exception) {
+            $this->discardConnection();
+
+            throw PublicationException::notSent($exception);
+        }
+
+        try {
+            $channel->basic_publish($message, $topic);
+            $channel->wait_for_pending_acks($this->config->publisherConfirmTimeout());
+        } catch (PublicationException $exception) {
+            $this->discardConnection();
+
+            throw $exception;
+        } catch (Throwable $exception) {
+            $this->discardConnection();
+
+            throw PublicationException::outcomeUnknown($exception);
         }
     }
 
@@ -69,10 +85,10 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
     public function consume(string $subscription, Closure $handoff): void
     {
         $queue = RabbitMqName::queue($this->ownershipPrefix->current(), $subscription);
-        $amqpConnection = $this->amqpConnection();
+        $this->handoffFailure = null;
 
         try {
-            $channel = $amqpConnection->channel();
+            $channel = $this->amqpConnection()->channel();
             $channel->basic_qos(0, $this->config->prefetch(), false);
             $channel->basic_consume(
                 $queue,
@@ -82,18 +98,22 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
                 false,
                 false,
                 function (AMQPMessage $delivery) use ($handoff): void {
-                    $handoff($delivery->getBody());
-                    $delivery->ack();
+                    $this->handoff($handoff, $delivery->getBody());
+                    $this->acknowledge($delivery);
                 },
             );
 
             $channel->consume();
 
-            throw new RabbitMqConsumerCancelledException;
+            throw ConsumptionException::consumerStopped();
         } catch (Throwable $exception) {
             $this->discardConnection();
 
-            throw $exception;
+            if ($exception === $this->handoffFailure || $exception instanceof SpoolrailException) {
+                throw $exception;
+            }
+
+            throw ConsumptionException::consumerStopped($exception);
         }
     }
 
@@ -143,7 +163,7 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
         $channel = $this->amqpConnection()->channel();
         $channel->confirm_select();
         $channel->set_nack_handler(static function (): never {
-            throw new RabbitMqPublicationRejectedException;
+            throw PublicationException::rejected();
         });
 
         return $this->publisherChannel = $channel;
@@ -152,6 +172,29 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
     private function amqpConnection(): AbstractConnection
     {
         return $this->amqpConnection ??= $this->connectionFactory->create($this->config);
+    }
+
+    /**
+     * @param  Closure(string): void  $handoff
+     */
+    private function handoff(Closure $handoff, string $body): void
+    {
+        try {
+            $handoff($body);
+        } catch (Throwable $exception) {
+            $this->handoffFailure = $exception;
+
+            throw $exception;
+        }
+    }
+
+    private function acknowledge(AMQPMessage $delivery): void
+    {
+        try {
+            $delivery->ack();
+        } catch (Throwable $exception) {
+            throw ConsumptionException::settlementFailed($exception);
+        }
     }
 
     private function discardIdlePublisherConnection(): void

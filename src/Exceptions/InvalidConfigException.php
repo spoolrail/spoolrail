@@ -37,4 +37,9 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
     {
         return new self('Spoolrail ownership prefix must begin with an ASCII letter and contain only ASCII letters, digits, hyphens, and underscores.');
     }
+
+    public static function rabbitMqSetting(string $connectionName, string $setting, string $requirement): self
+    {
+        return new self("RabbitMQ connection [$connectionName] setting [$setting] $requirement.");
+    }
 }

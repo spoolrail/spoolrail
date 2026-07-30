@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\RabbitMq;
 
-use Spoolrail\Spoolrail\Exceptions\RabbitMqQueueNameTooLongException;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqTopicNameTooLongException;
+use LengthException;
 
 class RabbitMqName
 {
@@ -16,11 +15,8 @@ class RabbitMqName
         $queueName = "$ownershipPrefix-$subscription";
 
         if (strlen($queueName) > self::MAX_BYTES) {
-            throw new RabbitMqQueueNameTooLongException(
-                $subscription,
-                $queueName,
-                $ownershipPrefix,
-                self::MAX_BYTES,
+            throw new LengthException(
+                "Logical subscription [$subscription] with ownership prefix [$ownershipPrefix] derives RabbitMQ queue [$queueName], which exceeds the ".self::MAX_BYTES.'-byte transport limit.',
             );
         }
 
@@ -30,7 +26,9 @@ class RabbitMqName
     public static function topic(string $topic): string
     {
         if (strlen($topic) > self::MAX_BYTES) {
-            throw new RabbitMqTopicNameTooLongException($topic, self::MAX_BYTES);
+            throw new LengthException(
+                "Logical topic [$topic] is also its RabbitMQ exchange name and exceeds the ".self::MAX_BYTES.'-byte transport limit.',
+            );
         }
 
         return $topic;

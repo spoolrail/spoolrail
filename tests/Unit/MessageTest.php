@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Ramsey\Uuid\Uuid;
-use Spoolrail\Spoolrail\Exceptions\InvalidMessageException;
 use Spoolrail\Spoolrail\Message;
 
 test('creates an unpublished UUIDv7 message with a caller-defined payload', function (): void {
@@ -23,7 +22,7 @@ test('creates an unpublished UUIDv7 message with a caller-defined payload', func
 
 test('rejects empty and whitespace-only message types', function (string $type): void {
     expect(fn (): Message => Message::make($type, []))
-        ->toThrow(InvalidMessageException::class);
+        ->toThrow(InvalidArgumentException::class);
 })->with([
     'empty' => '',
     'whitespace' => " \t\n",

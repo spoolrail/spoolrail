@@ -5,9 +5,15 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Exceptions;
 
 use RuntimeException;
+use Spoolrail\Spoolrail\RabbitMq\RabbitMqVersion;
 
 class RabbitMqTopologyException extends RuntimeException implements SpoolrailException
 {
+    public static function unsupportedVersion(string $version): self
+    {
+        return new self("RabbitMQ [$version] is not supported; Spoolrail requires RabbitMQ ".RabbitMqVersion::MINIMUM.' or later.');
+    }
+
     public static function incompatibleExchange(string $exchange, string $reason): self
     {
         return new self("RabbitMQ exchange [$exchange] is incompatible: $reason.");

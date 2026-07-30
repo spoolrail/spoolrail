@@ -6,10 +6,10 @@ namespace Spoolrail\Spoolrail;
 
 use Carbon\CarbonImmutable;
 use Closure;
+use InvalidArgumentException;
 use Spoolrail\Spoolrail\Contracts\ClosableDriver;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\ManagedTopology;
-use Spoolrail\Spoolrail\Exceptions\InvalidTopicException;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 use Spoolrail\Spoolrail\Topology\LogicalName;
 
@@ -25,7 +25,9 @@ class Connection
     public function publish(string $topic, Message $message): Message
     {
         if (! LogicalName::isValid($topic)) {
-            throw new InvalidTopicException($topic);
+            throw new InvalidArgumentException(
+                "Topic [$topic] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
+            );
         }
 
         $stampedMessage = $message->withPublishedAt(CarbonImmutable::now('UTC'));

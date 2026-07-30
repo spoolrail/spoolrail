@@ -7,8 +7,8 @@ namespace Spoolrail\Spoolrail\Subscriptions;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Queue\DatabaseQueue;
+use LogicException;
 use PDO;
-use Spoolrail\Spoolrail\Exceptions\DatabaseQueueTransactionException;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\MessageSerializer;
@@ -70,6 +70,8 @@ readonly class SubscriptionConsumer
             return;
         }
 
-        throw new DatabaseQueueTransactionException;
+        throw new LogicException(
+            "Laravel's database Queue cannot accept a Spoolrail handoff while its connection has an open transaction. Commit or roll back that transaction before consuming, or use another Queue connection.",
+        );
     }
 }

@@ -6,7 +6,6 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
-use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
@@ -151,7 +150,7 @@ test('rejects an unsupported broker before planning any mutations', function ():
 
     // --- Assert ---
     expect($action)->toThrow(
-        UnsupportedRabbitMqVersionException::class,
+        RabbitMqTopologyException::class,
         'RabbitMQ [4.2.9] is not supported; Spoolrail requires RabbitMQ 4.3 or later.',
     );
     $http->assertNotSent(

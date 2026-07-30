@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Exceptions\RabbitMqQueueNameTooLongException;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqTopicNameTooLongException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqName;
 
 test('derives a RabbitMQ queue from the ownership prefix and logical subscription', function (): void {
@@ -19,7 +17,7 @@ test('accepts a complete queue name at the transport limit and rejects the next 
 
     expect(strlen($queueName))->toBe(RabbitMqName::MAX_BYTES);
     expect(fn (): string => RabbitMqName::queue('app', $overLimit))
-        ->toThrow(function (RabbitMqQueueNameTooLongException $exception) use ($overLimit): void {
+        ->toThrow(function (LengthException $exception) use ($overLimit): void {
             expect($exception->getMessage())
                 ->toContain("Logical subscription [$overLimit]")
                 ->toContain("RabbitMQ queue [app-$overLimit]")
@@ -36,7 +34,7 @@ test('accepts a topic at the transport limit and rejects the next byte', functio
 
     expect($topic)->toBe($atLimit);
     expect(fn (): string => RabbitMqName::topic($overLimit))
-        ->toThrow(function (RabbitMqTopicNameTooLongException $exception) use ($overLimit): void {
+        ->toThrow(function (LengthException $exception) use ($overLimit): void {
             expect($exception->getMessage())
                 ->toContain("Logical topic [$overLimit]")
                 ->toContain('255-byte transport limit');

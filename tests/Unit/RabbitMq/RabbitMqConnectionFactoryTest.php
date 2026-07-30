@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use PhpAmqpLib\Connection\AbstractConnection;
-use Spoolrail\Spoolrail\Exceptions\UnsupportedRabbitMqVersionException;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 
@@ -68,7 +68,7 @@ test('rejects a detected RabbitMQ version older than 4.3', function (): void {
 
     expect(fn () => (new RabbitMqConnectionFactory)->assertSupportedVersion($amqpConnection))
         ->toThrow(
-            UnsupportedRabbitMqVersionException::class,
+            RabbitMqTopologyException::class,
             'RabbitMQ [4.2.9] is not supported; Spoolrail requires RabbitMQ 4.3 or later.',
         );
 });

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigException;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementConfig;
 
@@ -85,7 +85,7 @@ test('preserves the configured order of multiple RabbitMQ hosts', function (): v
 
 test('rejects conflicting host forms, empty host lists, and unsupported schemes', function (array $config, string $setting): void {
     expect(fn (): RabbitMqConnectionConfig => new RabbitMqConnectionConfig('events', $config))
-        ->toThrow(function (RabbitMqConfigException $exception) use ($setting): void {
+        ->toThrow(function (InvalidConfigException $exception) use ($setting): void {
             expect($exception->getMessage())->toContain("setting [$setting]");
         });
 })->with([
@@ -117,7 +117,7 @@ test('rejects management URLs with credentials, queries, or fragments', function
     ]);
 
     expect(fn (): RabbitMqManagementConfig => $config->management())
-        ->toThrow(function (RabbitMqConfigException $exception) use ($setting): void {
+        ->toThrow(function (InvalidConfigException $exception) use ($setting): void {
             expect($exception->getMessage())->toContain("setting [$setting]");
         });
 })->with([
@@ -140,7 +140,7 @@ test('never includes configured credentials in config diagnostics', function ():
     ]);
 
     expect(fn (): RabbitMqManagementConfig => $connectionConfig->management())
-        ->toThrow(function (RabbitMqConfigException $exception): void {
+        ->toThrow(function (InvalidConfigException $exception): void {
             expect($exception->getMessage())
                 ->not->toContain('topology')
                 ->not->toContain('management-secret');

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Console\Command;
-use Spoolrail\Spoolrail\Exceptions\ManagedTopologyUnavailableException;
 
 test('rejects blank option values', function (array $parameters, string $message): void {
     $exitCode = $this->artisan('spoolrail:delete-undeclared-subscriptions', $parameters)
@@ -26,7 +25,7 @@ test('rejects a connection without package-managed topology', function (): void 
     expect(fn () => $this->artisan('spoolrail:delete-undeclared-subscriptions', [
         '--connection' => 'array',
     ])->run())->toThrow(
-        ManagedTopologyUnavailableException::class,
+        LogicException::class,
         'Spoolrail connection [array] does not provide package-managed topology.',
     );
 });

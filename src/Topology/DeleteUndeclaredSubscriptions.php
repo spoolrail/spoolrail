@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Topology;
 
-use Spoolrail\Spoolrail\Exceptions\CurrentOwnershipPrefixCannotBeRetiredException;
-use Spoolrail\Spoolrail\Exceptions\ManagedTopologyUnavailableException;
+use InvalidArgumentException;
+use LogicException;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
@@ -29,11 +29,13 @@ readonly class DeleteUndeclaredSubscriptions
             : $this->prefix->validate($retiredPrefix);
 
         if ($retiredPrefix !== null && $targetPrefix === $currentPrefix) {
-            throw new CurrentOwnershipPrefixCannotBeRetiredException($currentPrefix);
+            throw new InvalidArgumentException(
+                "Ownership prefix [$currentPrefix] is current and cannot be supplied as a retired prefix.",
+            );
         }
 
         $topology = $this->manager->connection($connectionName)->managedTopology()
-            ?? throw new ManagedTopologyUnavailableException($connectionName);
+            ?? throw new LogicException("Spoolrail connection [$connectionName] does not provide package-managed topology.");
 
         $undeclaredResourceNames = $topology->undeclaredSubscriptionResourceNames(
             $retiredPrefix === null ? $this->declaredSubscriptions($connectionName) : [],

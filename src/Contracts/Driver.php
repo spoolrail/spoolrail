@@ -14,7 +14,7 @@ interface Driver
      * The driver retains its native receipt while invoking the handoff with the serialized body.
      * A normal handoff return authorizes the driver to settle the source delivery.
      * A handoff exception must leave it unsettled, stop consumption, and propagate unchanged.
-     * A settlement failure must also stop consumption and propagate.
+     * A settlement failure must also stop consumption and report that the handoff may be repeated.
      *
      * @param  Closure(string): void  $handoff
      */

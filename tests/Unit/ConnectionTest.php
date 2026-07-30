@@ -6,7 +6,6 @@ use Carbon\CarbonImmutable;
 use Spoolrail\Spoolrail\Connection;
 use Spoolrail\Spoolrail\Contracts\ClosableDriver;
 use Spoolrail\Spoolrail\Contracts\Driver;
-use Spoolrail\Spoolrail\Exceptions\InvalidTopicException;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageSerializer;
@@ -138,10 +137,13 @@ test('accepts an envelope at the shared size limit and rejects the next byte', f
     // --- Assert ---
     expect(strlen($publishedBodies[0]))->toBe(Connection::MAX_ENVELOPE_BYTES);
     expect($rejectOverLimit)
-        ->toThrow(
-            MessageTooLargeException::class,
-            'Serialized message envelope is 262145 bytes; Spoolrail accepts at most 262144 bytes.',
-        );
+        ->toThrow(function (MessageTooLargeException $exception): void {
+            expect($exception->bytes)->toBe(262_145);
+            expect($exception->limit)->toBe(Connection::MAX_ENVELOPE_BYTES);
+            expect($exception->getMessage())->toBe(
+                'Serialized message envelope is 262145 bytes; Spoolrail accepts at most 262144 bytes.',
+            );
+        });
 });
 
 test('rejects a non-portable topic before raw publication', function (): void {
@@ -157,6 +159,6 @@ test('rejects a non-portable topic before raw publication', function (): void {
     );
 
     // --- Assert ---
-    expect($action)->toThrow(InvalidTopicException::class);
+    expect($action)->toThrow(InvalidArgumentException::class);
     $driver->shouldNotHaveReceived('publish');
 });

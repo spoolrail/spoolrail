@@ -4,10 +4,19 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Exceptions;
 
+use JsonException;
 use UnexpectedValueException;
 
 class InvalidMessageEnvelopeException extends UnexpectedValueException implements SpoolrailException
 {
+    public static function malformedJson(JsonException $previous): self
+    {
+        return new self(
+            'The message envelope must contain valid JSON.',
+            previous: $previous,
+        );
+    }
+
     public static function mustBeObject(): self
     {
         return new self('The message envelope must be a JSON object.');

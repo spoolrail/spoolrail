@@ -9,13 +9,12 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use LogicException;
 use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
-use Spoolrail\Spoolrail\Exceptions\MissingRabbitMqDependencyException;
-use Spoolrail\Spoolrail\Exceptions\RabbitMqConfigException;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
 use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
@@ -177,13 +176,15 @@ class SpoolrailManager
      * @param  array<array-key, mixed>  $config
      *
      * @throws BindingResolutionException
-     * @throws MissingRabbitMqDependencyException
-     * @throws RabbitMqConfigException
+     * @throws InvalidConfigException
+     * @throws LogicException
      */
     private function createRabbitMqDriver(string $connectionName, array $config): RabbitMqDriver
     {
         if (! class_exists(AMQPConnectionConfig::class)) {
-            throw new MissingRabbitMqDependencyException;
+            throw new LogicException(
+                'The RabbitMQ driver requires php-amqplib/php-amqplib:^3.7.4. Install it in the application before selecting this driver.',
+            );
         }
 
         $connectionConfig = new RabbitMqConnectionConfig($connectionName, $config);

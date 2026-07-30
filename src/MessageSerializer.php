@@ -7,6 +7,7 @@ namespace Spoolrail\Spoolrail;
 use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 use DateTimeZone;
+use JsonException;
 use Ramsey\Uuid\Rfc4122\FieldsInterface;
 use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
@@ -30,7 +31,11 @@ class MessageSerializer
 
     public function deserialize(string $json): Message
     {
-        $envelope = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        try {
+            $envelope = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw InvalidMessageEnvelopeException::malformedJson($exception);
+        }
 
         if (! is_array($envelope) || ! str_starts_with(ltrim($json), '{')) {
             throw InvalidMessageEnvelopeException::mustBeObject();

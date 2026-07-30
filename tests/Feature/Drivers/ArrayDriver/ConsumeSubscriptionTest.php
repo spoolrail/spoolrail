@@ -7,7 +7,6 @@ use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Spoolrail\Spoolrail\Exceptions\DatabaseQueueTransactionException;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
@@ -92,7 +91,7 @@ test('rejects an open transaction on the database Queue connection without losin
     $this->artisan('spoolrail:consume transaction-orders')->run();
 
     // --- Assert ---
-    expect($failure)->toBeInstanceOf(DatabaseQueueTransactionException::class);
+    expect($failure)->toBeInstanceOf(LogicException::class);
     expect($failure?->getMessage())->toBe(
         "Laravel's database Queue cannot accept a Spoolrail handoff while its connection has an open transaction. Commit or roll back that transaction before consuming, or use another Queue connection.",
     );

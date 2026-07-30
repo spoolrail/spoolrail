@@ -81,7 +81,10 @@ test('rejects JSON values that are not object envelopes', function (string $json
 
 test('rejects malformed JSON', function (): void {
     expect(fn (): Message => (new MessageSerializer)->deserialize(''))
-        ->toThrow(JsonException::class);
+        ->toThrow(function (InvalidMessageEnvelopeException $exception): void {
+            expect($exception->getMessage())->toBe('The message envelope must contain valid JSON.');
+            expect($exception->getPrevious())->toBeInstanceOf(JsonException::class);
+        });
 });
 
 test('rejects wire envelopes missing a required field', function (string $field): void {

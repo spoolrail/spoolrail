@@ -23,7 +23,9 @@
 - Let exceptions bubble to the host application or framework boundary by default.
 - Add `try/catch` only when it meaningfully changes behavior through recovery or rollback, retry, fallback, or exception translation. Never use it for routine control flow.
 - Use `finally` only for guaranteed resource cleanup (locks, temp files, external handles).
-- Group domain exceptions by stable, caller-relevant failure categories rather than throw sites.
+- Design exception contracts around the actions callers can take. Related failures may share a type only when callers can handle them the same way or distinguish them through structured state; messages are diagnostic, not control flow.
+- Translate lower-level exceptions only at a boundary that owns a more stable failure contract, preserving the original exception as the cause.
+- Let exceptions from caller-supplied callbacks and delegated application work propagate unchanged unless the current boundary owns their recovery semantics.
 - Choose an exception's base class according to the catch boundary callers need, preferring the closest suitable SPL or framework exception class.
 - Domain exception classes own their meaningful messages; use named constructors when they clarify distinct failure cases.
 
