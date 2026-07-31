@@ -45,7 +45,7 @@ readonly class RabbitMqTopology implements ManagedTopology
             $queueName = $requiredBinding['queue'];
 
             if (! isset($inspectedExchanges[$exchangeName])) {
-                if ($this->isExchangeMissing($exchangeName)) {
+                if ($this->exchangeNeedsCreation($exchangeName)) {
                     $missingExchanges[] = $exchangeName;
                 }
 
@@ -80,7 +80,7 @@ readonly class RabbitMqTopology implements ManagedTopology
                 $operatorPolicies,
             );
 
-            if ($this->isBindingMissing($queueName, $exchangeName)) {
+            if ($this->bindingNeedsCreation($queueName, $exchangeName)) {
                 $missingBindings[] = [
                     'exchange' => $exchangeName,
                     'queue' => $queueName,
@@ -189,10 +189,7 @@ readonly class RabbitMqTopology implements ManagedTopology
         return $type;
     }
 
-    /**
-     * @return bool Whether the exchange must be created.
-     */
-    private function isExchangeMissing(string $exchangeName): bool
+    private function exchangeNeedsCreation(string $exchangeName): bool
     {
         $exchange = $this->managementClient->exchange($exchangeName);
 
@@ -242,15 +239,13 @@ readonly class RabbitMqTopology implements ManagedTopology
             return [];
         }
 
-        foreach ([$operatorPolicies, $policies] as $policySet) {
-            $limit = $this->applicableDeliveryLimit(
-                $queueName,
-                $policySet,
-            );
+        $finiteLimit = $this->firstFiniteDeliveryLimit([
+            $this->applicableDeliveryLimit($queueName, $operatorPolicies),
+            $this->applicableDeliveryLimit($queueName, $policies),
+        ]);
 
-            if ($limit !== null && $limit !== -1) {
-                throw RabbitMqTopologyException::finiteDeliveryLimit($queueName, $limit);
-            }
+        if ($finiteLimit !== null) {
+            throw RabbitMqTopologyException::finiteDeliveryLimit($queueName, $finiteLimit);
         }
 
         return ['x-delivery-limit' => -1];
@@ -323,10 +318,10 @@ readonly class RabbitMqTopology implements ManagedTopology
             $this->applicableDeliveryLimit($queueName, $operatorPolicies),
         ];
 
-        foreach ($limits as $limit) {
-            if ($limit !== null && $limit !== -1) {
-                throw RabbitMqTopologyException::finiteDeliveryLimit($queueName, $limit);
-            }
+        $finiteLimit = $this->firstFiniteDeliveryLimit($limits);
+
+        if ($finiteLimit !== null) {
+            throw RabbitMqTopologyException::finiteDeliveryLimit($queueName, $finiteLimit);
         }
 
         if (in_array(-1, $limits, true)) {
@@ -336,10 +331,7 @@ readonly class RabbitMqTopology implements ManagedTopology
         throw RabbitMqTopologyException::indeterminateDeliveryLimit($queueName);
     }
 
-    /**
-     * @return bool Whether the required binding must be created.
-     */
-    private function isBindingMissing(string $queueName, string $exchangeName): bool
+    private function bindingNeedsCreation(string $queueName, string $exchangeName): bool
     {
         $bindings = array_values(array_filter(
             $this->managementClient->queueBindings($queueName),
@@ -355,14 +347,14 @@ readonly class RabbitMqTopology implements ManagedTopology
         }
 
         $binding = $bindings[0];
-        $arguments = $binding['arguments'] ?? [];
+        $requirements = [
+            'source' => $exchangeName,
+            'destination_type' => 'queue',
+            'routing_key' => '',
+            'arguments' => [],
+        ];
 
-        if (
-            ($binding['source'] ?? null) !== $exchangeName
-            || ($binding['destination_type'] ?? null) !== 'queue'
-            || ($binding['routing_key'] ?? null) !== ''
-            || $arguments !== []
-        ) {
+        if (array_intersect_key($binding, $requirements) !== $requirements) {
             throw RabbitMqTopologyException::incompatibleBindings($queueName, $exchangeName);
         }
 
@@ -392,20 +384,17 @@ readonly class RabbitMqTopology implements ManagedTopology
 
         // RabbitMQ chooses nondeterministically between matching policies with equal priority.
         $priority = $applicable[0]['priority'] ?? 0;
-        $limits = array_map(
+        $limits = array_values(array_map(
             $this->policyDeliveryLimit(...),
             array_filter(
                 $applicable,
                 static fn (array $policy): bool => ($policy['priority'] ?? 0) === $priority,
             ),
-        );
-
-        $finiteLimit = current(array_filter(
-            $limits,
-            static fn (?int $limit): bool => $limit !== null && $limit !== -1,
         ));
 
-        if ($finiteLimit !== false) {
+        $finiteLimit = $this->firstFiniteDeliveryLimit($limits);
+
+        if ($finiteLimit !== null) {
             return $finiteLimit;
         }
 
@@ -415,6 +404,20 @@ readonly class RabbitMqTopology implements ManagedTopology
         )) === count($limits)
             ? -1
             : null;
+    }
+
+    /**
+     * @param  list<?int>  $limits
+     */
+    private function firstFiniteDeliveryLimit(array $limits): ?int
+    {
+        foreach ($limits as $limit) {
+            if ($limit !== null && $limit !== -1) {
+                return $limit;
+            }
+        }
+
+        return null;
     }
 
     /**

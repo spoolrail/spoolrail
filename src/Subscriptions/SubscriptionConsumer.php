@@ -63,15 +63,21 @@ readonly class SubscriptionConsumer
             return;
         }
 
-        $database = $queue->getDatabase();
-        $pdo = $database->getRawPdo();
-
-        if ($database->transactionLevel() === 0 && (! $pdo instanceof PDO || ! $pdo->inTransaction())) {
+        if (! $this->hasOpenTransaction($queue)) {
             return;
         }
 
         throw new LogicException(
             "Laravel's database Queue cannot accept a Spoolrail handoff while its connection has an open transaction. Commit or roll back that transaction before consuming, or use another Queue connection.",
         );
+    }
+
+    private function hasOpenTransaction(DatabaseQueue $queue): bool
+    {
+        $database = $queue->getDatabase();
+        $pdo = $database->getRawPdo();
+
+        return $database->transactionLevel() > 0
+            || ($pdo instanceof PDO && $pdo->inTransaction());
     }
 }

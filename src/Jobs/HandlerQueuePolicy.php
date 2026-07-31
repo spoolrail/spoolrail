@@ -56,12 +56,6 @@ class HandlerQueuePolicy
         }
 
         $reflection = new ReflectionClass($handler);
-        $defaultProperties = $reflection->getDefaultProperties();
-
-        if (isset($handler->{$property}) && $handler->{$property} !== ($defaultProperties[$property] ?? null)) {
-            return $handler->{$property};
-        }
-
         $resolvedAttribute = $this->nearestAttribute($reflection, $attributeClass);
 
         if ($resolvedAttribute === null) {

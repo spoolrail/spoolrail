@@ -248,27 +248,10 @@ class RabbitMqManagementClient
      */
     private function readAll(string $path, string $operation): array
     {
-        $response = $this->request('GET', $path, $operation);
-        $decoded = $response->json();
-
-        if (! is_array($decoded) || ! array_is_list($decoded)) {
-            throw RabbitMqManagementException::invalidResponse(
-                $this->config->connectionName,
-                $operation,
-            );
-        }
-
-        foreach ($decoded as $map) {
-            if (! is_array($map) || array_is_list($map)) {
-                throw RabbitMqManagementException::invalidResponse(
-                    $this->config->connectionName,
-                    $operation,
-                );
-            }
-        }
-
-        /** @var list<array<string, mixed>> $decoded */
-        return $decoded;
+        return $this->requireListOfMaps(
+            $this->request('GET', $path, $operation)->json(),
+            $operation,
+        );
     }
 
     /**
@@ -276,29 +259,7 @@ class RabbitMqManagementClient
      */
     private function decodeMap(Response $response, string $operation): array
     {
-        $decoded = $response->json();
-
-        if (! is_array($decoded) || array_is_list($decoded)) {
-            throw RabbitMqManagementException::invalidResponse(
-                $this->config->connectionName,
-                $operation,
-            );
-        }
-
-        $map = [];
-
-        foreach ($decoded as $key => $value) {
-            if (! is_string($key)) {
-                throw RabbitMqManagementException::invalidResponse(
-                    $this->config->connectionName,
-                    $operation,
-                );
-            }
-
-            $map[$key] = $value;
-        }
-
-        return $map;
+        return $this->requireMap($response->json(), $operation);
     }
 
     /**
@@ -306,39 +267,72 @@ class RabbitMqManagementClient
      */
     private function decodePage(Response $response, string $operation, int $requestedPage): array
     {
-        $decoded = $response->json();
+        $page = $this->requireMap($response->json(), $operation);
 
-        if (
-            ! is_array($decoded)
-            || array_is_list($decoded)
-            || ($decoded['page'] ?? null) !== $requestedPage
-            || ! is_int($decoded['page_count'] ?? null)
-            || $decoded['page_count'] < 0
-            || ! is_array($decoded['items'] ?? null)
-            || ! array_is_list($decoded['items'])
-            || ($decoded['page_count'] === 0
-                ? $requestedPage !== 1
-                : $requestedPage > $decoded['page_count'])
-        ) {
-            throw RabbitMqManagementException::invalidResponse(
-                $this->config->connectionName,
-                $operation,
-            );
+        if (($page['page'] ?? null) !== $requestedPage) {
+            $this->rejectInvalidResponse($operation);
         }
 
-        foreach ($decoded['items'] as $item) {
-            if (! is_array($item) || array_is_list($item)) {
-                throw RabbitMqManagementException::invalidResponse(
-                    $this->config->connectionName,
-                    $operation,
-                );
-            }
+        $pageCount = $this->requireNonNegativeInteger($page['page_count'] ?? null, $operation);
+
+        if ($requestedPage > max(1, $pageCount)) {
+            $this->rejectInvalidResponse($operation);
         }
 
-        /** @var list<array<string, mixed>> $items */
-        $items = $decoded['items'];
+        $items = $this->requireListOfMaps($page['items'] ?? null, $operation);
 
-        return [$items, $decoded['page_count']];
+        return [$items, $pageCount];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function requireMap(mixed $decoded, string $operation): array
+    {
+        if (! is_array($decoded) || array_is_list($decoded)) {
+            $this->rejectInvalidResponse($operation);
+        }
+
+        $keys = array_keys($decoded);
+
+        if (array_filter($keys, is_string(...)) !== $keys) {
+            $this->rejectInvalidResponse($operation);
+        }
+
+        /** @var array<string, mixed> $decoded */
+        return $decoded;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function requireListOfMaps(mixed $decoded, string $operation): array
+    {
+        if (! is_array($decoded) || ! array_is_list($decoded)) {
+            $this->rejectInvalidResponse($operation);
+        }
+
+        return array_map(
+            fn (mixed $map): array => $this->requireMap($map, $operation),
+            $decoded,
+        );
+    }
+
+    private function requireNonNegativeInteger(mixed $value, string $operation): int
+    {
+        if (! is_int($value) || $value < 0) {
+            $this->rejectInvalidResponse($operation);
+        }
+
+        return $value;
+    }
+
+    private function rejectInvalidResponse(string $operation): never
+    {
+        throw RabbitMqManagementException::invalidResponse(
+            $this->config->connectionName,
+            $operation,
+        );
     }
 
     /**
@@ -375,15 +369,10 @@ class RabbitMqManagementClient
         bool $allowNotFound = false,
         array $query = [],
     ): Response {
-        $options = [];
-
-        if ($payload !== []) {
-            $options['json'] = $payload;
-        }
-
-        if ($query !== []) {
-            $options['query'] = $query;
-        }
+        $options = array_filter([
+            'json' => $payload,
+            'query' => $query,
+        ]);
 
         $pending = $this->pendingRequest();
 
@@ -397,15 +386,15 @@ class RabbitMqManagementClient
             );
         }
 
-        if (! $response->successful() && (! $allowNotFound || ! $response->notFound())) {
-            throw RabbitMqManagementException::unexpectedStatus(
-                $this->config->connectionName,
-                $operation,
-                $response->status(),
-            );
+        if ($response->successful() || ($allowNotFound && $response->notFound())) {
+            return $response;
         }
 
-        return $response;
+        throw RabbitMqManagementException::unexpectedStatus(
+            $this->config->connectionName,
+            $operation,
+            $response->status(),
+        );
     }
 
     /**

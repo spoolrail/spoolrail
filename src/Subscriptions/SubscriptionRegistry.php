@@ -34,19 +34,8 @@ class SubscriptionRegistry
             throw InvalidSubscriptionException::invalidName($name);
         }
 
-        if (! is_a($handler, MessageHandler::class, true)) {
-            throw InvalidSubscriptionException::invalidHandler($handler);
-        }
-
-        $reflection = new ReflectionClass($handler);
-
-        if ($reflection->isInterface() || $reflection->isAbstract() || $reflection->isEnum()) {
-            throw InvalidSubscriptionException::invalidHandler($handler);
-        }
-
-        if (isset($this->subscriptions[$name]) || isset($this->drainTargets[$name])) {
-            throw InvalidSubscriptionException::duplicateName($name);
-        }
+        $handler = $this->requireConcreteHandler($handler);
+        $this->assertAvailableName($name);
 
         return $this->subscriptions[$name] = new Subscription(
             $topic,
@@ -77,11 +66,35 @@ class SubscriptionRegistry
         return array_values($this->subscriptions);
     }
 
+    /**
+     * @param  class-string  $handler
+     * @return class-string<MessageHandler>
+     *
+     * @throws ReflectionException
+     */
+    private function requireConcreteHandler(string $handler): string
+    {
+        if (! is_a($handler, MessageHandler::class, true)) {
+            throw InvalidSubscriptionException::invalidHandler($handler);
+        }
+
+        if (! new ReflectionClass($handler)->isInstantiable()) {
+            throw InvalidSubscriptionException::invalidHandler($handler);
+        }
+
+        return $handler;
+    }
+
+    private function assertAvailableName(string $name): void
+    {
+        if (isset($this->subscriptions[$name]) || isset($this->drainTargets[$name])) {
+            throw InvalidSubscriptionException::duplicateName($name);
+        }
+    }
+
     private function registerDrainTarget(string $formerName, string $activeName): void
     {
-        if (isset($this->subscriptions[$formerName]) || isset($this->drainTargets[$formerName])) {
-            throw InvalidSubscriptionException::duplicateName($formerName);
-        }
+        $this->assertAvailableName($formerName);
 
         $this->drainTargets[$formerName] = $activeName;
     }

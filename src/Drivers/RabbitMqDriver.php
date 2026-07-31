@@ -63,6 +63,14 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
             throw PublicationException::notSent($exception);
         }
 
+        $this->publishAndAwaitConfirmation($channel, $message, $topic);
+    }
+
+    private function publishAndAwaitConfirmation(
+        AMQPChannel $channel,
+        AMQPMessage $message,
+        string $topic,
+    ): void {
         try {
             $channel->basic_publish($message, $topic);
             $channel->wait_for_pending_acks($this->config->publisherConfirmTimeout());

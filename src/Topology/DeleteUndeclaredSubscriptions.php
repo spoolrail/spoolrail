@@ -23,16 +23,7 @@ readonly class DeleteUndeclaredSubscriptions
      */
     public function __invoke(string $connectionName, ?string $retiredPrefix): array
     {
-        $currentPrefix = $this->prefix->current();
-        $targetPrefix = $retiredPrefix === null
-            ? $currentPrefix
-            : $this->prefix->validate($retiredPrefix);
-
-        if ($retiredPrefix !== null && $targetPrefix === $currentPrefix) {
-            throw new InvalidArgumentException(
-                "Ownership prefix [$currentPrefix] is current and cannot be supplied as a retired prefix.",
-            );
-        }
+        $targetPrefix = $this->targetPrefix($retiredPrefix);
 
         $topology = $this->manager->connection($connectionName)->managedTopology()
             ?? throw new LogicException("Spoolrail connection [$connectionName] does not provide package-managed topology.");
@@ -47,6 +38,25 @@ readonly class DeleteUndeclaredSubscriptions
         }
 
         return $undeclaredResourceNames;
+    }
+
+    private function targetPrefix(?string $retiredPrefix): string
+    {
+        $currentPrefix = $this->prefix->current();
+
+        if ($retiredPrefix === null) {
+            return $currentPrefix;
+        }
+
+        $targetPrefix = $this->prefix->validate($retiredPrefix);
+
+        if ($targetPrefix === $currentPrefix) {
+            throw new InvalidArgumentException(
+                "Ownership prefix [$currentPrefix] is current and cannot be supplied as a retired prefix.",
+            );
+        }
+
+        return $targetPrefix;
     }
 
     /**

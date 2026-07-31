@@ -9,6 +9,13 @@ use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 
 readonly class RabbitMqConnectionConfig
 {
+    private const array FORBIDDEN_MANAGEMENT_URL_PARTS = [
+        'user' => true,
+        'pass' => true,
+        'query' => true,
+        'fragment' => true,
+    ];
+
     /**
      * @param  array<array-key, mixed>  $config
      */
@@ -131,25 +138,30 @@ readonly class RabbitMqConnectionConfig
     private function managementUrl(array $config): string
     {
         $url = Arr::string($config, 'url', 'http://127.0.0.1:15672');
-        $parts = parse_url($url);
+        $parts = (array) parse_url($url);
 
-        if (
-            ! is_array($parts)
-            || ! isset($parts['scheme'], $parts['host'])
-            || ! in_array($parts['scheme'], ['http', 'https'], true)
-            || isset($parts['user'])
-            || isset($parts['pass'])
-            || isset($parts['query'])
-            || isset($parts['fragment'])
-        ) {
-            throw InvalidConfigException::rabbitMqSetting(
-                $this->connectionName,
-                'management.url',
-                'must be an HTTP or HTTPS endpoint without embedded credentials, query, or fragment',
-            );
+        if (! in_array($parts['scheme'] ?? null, ['http', 'https'], true)) {
+            $this->rejectManagementUrl();
+        }
+
+        if (! isset($parts['host'])) {
+            $this->rejectManagementUrl();
+        }
+
+        if (array_intersect_key($parts, self::FORBIDDEN_MANAGEMENT_URL_PARTS) !== []) {
+            $this->rejectManagementUrl();
         }
 
         return rtrim($url, '/');
+    }
+
+    private function rejectManagementUrl(): never
+    {
+        throw InvalidConfigException::rabbitMqSetting(
+            $this->connectionName,
+            'management.url',
+            'must be an HTTP or HTTPS endpoint without embedded credentials, query, or fragment',
+        );
     }
 
     private function integer(string $key, int $default): int

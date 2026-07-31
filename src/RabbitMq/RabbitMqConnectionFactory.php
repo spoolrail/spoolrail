@@ -33,17 +33,32 @@ class RabbitMqConnectionFactory
      */
     public function assertSupportedVersion(AbstractConnection $amqpConnection): void
     {
-        $properties = $amqpConnection->getServerProperties();
-        $versionProperty = $properties['version'] ?? null;
-        $version = is_array($versionProperty) && isset($versionProperty[1]) && is_string($versionProperty[1])
-            ? $versionProperty[1]
-            : null;
+        $version = $this->serverVersion($amqpConnection);
 
-        if (! is_string($version) || version_compare($version, RabbitMqVersion::MINIMUM, '<')) {
+        if (! is_string($version)) {
             $amqpConnection->close();
 
-            throw RabbitMqTopologyException::unsupportedVersion(is_string($version) ? $version : 'unknown');
+            throw RabbitMqTopologyException::unsupportedVersion('unknown');
         }
+
+        if (version_compare($version, RabbitMqVersion::MINIMUM, '<')) {
+            $amqpConnection->close();
+
+            throw RabbitMqTopologyException::unsupportedVersion($version);
+        }
+    }
+
+    private function serverVersion(AbstractConnection $amqpConnection): ?string
+    {
+        $versionProperty = $amqpConnection->getServerProperties()['version'] ?? null;
+
+        if (! is_array($versionProperty)) {
+            return null;
+        }
+
+        $version = $versionProperty[1] ?? null;
+
+        return is_string($version) ? $version : null;
     }
 
     /**
