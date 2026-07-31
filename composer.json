@@ -3,6 +3,11 @@
     "description": "Message broker library made native to Laravel for building resilient distributed systems",
     "type": "library",
     "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Diachenko"
+        }
+    ],
     "require": {
         "ext-pdo": "*",
         "php": "^8.4",
@@ -73,11 +78,5 @@
         }
     },
     "minimum-stability": "dev",
-    "prefer-stable": true,
-    "authors": [
-        {
-            "name": "Alexander Diachenko",
-            "email": "xndrbyte@gmail.com"
-        }
-    ]
+    "prefer-stable": true
 }
