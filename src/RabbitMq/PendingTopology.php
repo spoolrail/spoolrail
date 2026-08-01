@@ -6,7 +6,7 @@ namespace Spoolrail\Spoolrail\RabbitMq;
 
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 
-readonly class RabbitMqTopologyPlan implements TopologyPlan
+readonly class PendingTopology implements TopologyPlan
 {
     /**
      * @param  list<string>  $exchanges
@@ -14,7 +14,7 @@ readonly class RabbitMqTopologyPlan implements TopologyPlan
      * @param  list<array{exchange: string, queue: string}>  $bindings
      */
     public function __construct(
-        private RabbitMqManagementClient $managementClient,
+        private ManagementClient $managementClient,
         private array $exchanges,
         private array $queues,
         private array $bindings,

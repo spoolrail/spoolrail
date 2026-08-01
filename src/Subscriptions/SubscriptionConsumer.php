@@ -11,7 +11,7 @@ use LogicException;
 use PDO;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
-use Spoolrail\Spoolrail\MessageSerializer;
+use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
 
 readonly class SubscriptionConsumer
@@ -19,7 +19,7 @@ readonly class SubscriptionConsumer
     public function __construct(
         private SpoolrailManager $manager,
         private SubscriptionRegistry $subscriptions,
-        private MessageSerializer $serializer,
+        private MessageEnvelope $envelope,
         private QueueFactory $queues,
         private HandlerQueuePolicy $handlerQueuePolicy,
     ) {}
@@ -45,7 +45,7 @@ readonly class SubscriptionConsumer
 
     private function handoff(string $body, Subscription $subscription, Queue $queue): void
     {
-        $message = $this->serializer->deserialize($body);
+        $message = $this->envelope->decode($body);
         $job = new HandleMessageJob($message, $subscription->name());
 
         $this->handlerQueuePolicy->capture($subscription->handlerClass(), $message, $job);
@@ -77,7 +77,10 @@ readonly class SubscriptionConsumer
         $database = $queue->getDatabase();
         $pdo = $database->getRawPdo();
 
-        return $database->transactionLevel() > 0
-            || ($pdo instanceof PDO && $pdo->inTransaction());
+        if ($database->transactionLevel() > 0) {
+            return true;
+        }
+
+        return $pdo instanceof PDO && $pdo->inTransaction();
     }
 }

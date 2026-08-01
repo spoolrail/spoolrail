@@ -8,21 +8,21 @@ use Closure;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Message\AMQPMessage;
-use Spoolrail\Spoolrail\Contracts\ClosableDriver;
+use Spoolrail\Spoolrail\Contracts\CanClose;
+use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
-use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\ConsumptionException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Exceptions\SpoolrailException;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqName;
+use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\Connector;
+use Spoolrail\Spoolrail\RabbitMq\ResourceName;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 use Throwable;
 
-class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
+class RabbitMqDriver implements CanClose, CanManageTopology, Driver
 {
     private ?AbstractConnection $amqpConnection = null;
 
@@ -31,9 +31,9 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
     private ?Throwable $handoffFailure = null;
 
     public function __construct(
-        private readonly RabbitMqConnectionConfig $config,
-        private readonly RabbitMqConnectionFactory $connectionFactory,
-        private readonly ManagedTopology $topology,
+        private readonly ConnectionConfig $config,
+        private readonly Connector $connector,
+        private readonly CanManageTopology $topology,
         private readonly OwnershipPrefix $ownershipPrefix,
     ) {}
 
@@ -44,7 +44,7 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
 
     public function publish(string $topic, string $body): void
     {
-        RabbitMqName::topic($topic);
+        ResourceName::topic($topic);
 
         try {
             $this->discardIdlePublisherConnection();
@@ -92,7 +92,7 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
      */
     public function consume(string $subscription, Closure $handoff): void
     {
-        $queue = RabbitMqName::queue($this->ownershipPrefix->current(), $subscription);
+        $queue = ResourceName::queue($this->ownershipPrefix->current(), $subscription);
         $this->handoffFailure = null;
 
         try {
@@ -179,7 +179,7 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
 
     private function amqpConnection(): AbstractConnection
     {
-        return $this->amqpConnection ??= $this->connectionFactory->create($this->config);
+        return $this->amqpConnection ??= $this->connector->connect($this->config);
     }
 
     /**
@@ -207,20 +207,25 @@ class RabbitMqDriver implements ClosableDriver, Driver, ManagedTopology
 
     private function discardIdlePublisherConnection(): void
     {
-        if (! $this->publisherChannel instanceof AMQPChannel || ! $this->amqpConnection instanceof AbstractConnection) {
+        $connection = $this->amqpConnection;
+
+        if (! $this->publisherChannel instanceof AMQPChannel || ! $connection instanceof AbstractConnection) {
             return;
         }
 
-        $heartbeat = $this->amqpConnection->getHeartbeat();
-        $lastActivity = $this->amqpConnection->getLastActivity();
-
-        if (
-            $heartbeat > 0
-            && $lastActivity > 0
-            && microtime(true) - $lastActivity >= $heartbeat * 2
-        ) {
+        if ($this->isPublisherConnectionIdle($connection)) {
             $this->discardConnection();
         }
+    }
+
+    private function isPublisherConnectionIdle(AbstractConnection $connection): bool
+    {
+        $heartbeat = $connection->getHeartbeat();
+        $lastActivity = $connection->getLastActivity();
+
+        return $heartbeat > 0
+            && $lastActivity > 0
+            && microtime(true) - $lastActivity >= $heartbeat * 2;
     }
 
     private function discardConnection(): void

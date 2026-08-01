@@ -6,15 +6,15 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
+use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\ManagementClient;
+use Spoolrail\Spoolrail\RabbitMq\Topology;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 /**
  * @param  array<string, array{mixed, int}>  $responses
- * @return array{RabbitMqTopology, Factory}
+ * @return array{Topology, Factory}
  */
 function rabbitMqTopology(array $responses = []): array
 {
@@ -35,12 +35,12 @@ function rabbitMqTopology(array $responses = []): array
         return $http->response($body, $status);
     });
 
-    $connectionConfig = new RabbitMqConnectionConfig('events', []);
+    $connectionConfig = new ConnectionConfig('events', []);
 
     return [
-        new RabbitMqTopology(
+        new Topology(
             $connectionConfig,
-            new RabbitMqManagementClient($connectionConfig, $http),
+            new ManagementClient($connectionConfig, $http),
         ),
         $http,
     ];
@@ -86,7 +86,7 @@ function compatibleQuorumTopologyResponses(array $arguments = []): array
     ];
 }
 
-test('rejects a stream default queue type before creation', function (): void {
+test('rejects a stream default queue type before planning creation', function (): void {
     // --- Arrange ---
     [$topology, $http] = rabbitMqTopology([
         'GET vhosts/%2F' => [['default_queue_type' => 'stream'], 200],
@@ -569,6 +569,35 @@ test('creates a missing binding for an otherwise compatible existing queue', fun
         static fn (Request $request): bool => $request->method() === 'POST'
             && str_ends_with($request->url(), '/api/bindings/%2F/e/orders/q/application-a-warehouse'),
     );
+});
+
+test('reports only undeclared queue names inside the ownership namespace', function (): void {
+    // --- Arrange ---
+    [$topology] = rabbitMqTopology([
+        'GET queues/%2F' => [[
+            'page' => 1,
+            'page_count' => 1,
+            'items' => [
+                ['name' => 'application-b-orders'],
+                ['name' => 'application-a-returns'],
+                ['name' => null],
+                ['name' => 'application-a-orders'],
+                ['name' => 'application-a-accounts'],
+            ],
+        ], 200],
+    ]);
+
+    // --- Act ---
+    $queueNames = $topology->undeclaredSubscriptionResourceNames(
+        [rabbitMqSubscription(name: 'orders')],
+        'application-a',
+    );
+
+    // --- Assert ---
+    expect($queueNames)->toBe([
+        'application-a-accounts',
+        'application-a-returns',
+    ]);
 });
 
 test('shares one topic exchange while keeping application queue namespaces distinct', function (): void {

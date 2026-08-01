@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\MessageSerializer;
+use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
@@ -28,7 +28,7 @@ test('returns every unsettled prefetched RabbitMQ delivery after a failed handof
         );
     }
 
-    $serializer = new MessageSerializer;
+    $envelope = new MessageEnvelope;
     $handoffs = [];
     $failure = new RuntimeException('Laravel Queue handoff failed.');
     $caught = null;
@@ -37,8 +37,8 @@ test('returns every unsettled prefetched RabbitMQ delivery after a failed handof
     try {
         Spoolrail::connection('rabbitmq')->consume(
             'warehouse',
-            function (string $body) use ($serializer, &$handoffs, $failure): void {
-                $reference = $serializer->deserialize($body)->payload['reference'];
+            function (string $body) use ($envelope, &$handoffs, $failure): void {
+                $reference = $envelope->decode($body)->payload['reference'];
                 $handoffs[] = $reference;
 
                 if ($reference === 'second') {
@@ -53,7 +53,7 @@ test('returns every unsettled prefetched RabbitMQ delivery after a failed handof
     // --- Assert ---
     $remaining = array_map(
         fn (array $delivery): array => [
-            'reference' => $serializer->deserialize($delivery['payload'])->payload['reference'],
+            'reference' => $envelope->decode($delivery['payload'])->payload['reference'],
             'redelivered' => $delivery['redelivered'],
         ],
         $this->drainRabbitMqDeliveries($queue, 4),

@@ -15,10 +15,10 @@ use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionFactory;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqTopology;
+use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\Connector;
+use Spoolrail\Spoolrail\RabbitMq\ManagementClient;
+use Spoolrail\Spoolrail\RabbitMq\Topology;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
@@ -37,7 +37,7 @@ class SpoolrailManager
     public function __construct(
         private readonly Application $app,
         private readonly Repository $config,
-        private readonly MessageSerializer $serializer,
+        private readonly MessageEnvelope $envelope,
     ) {}
 
     public function connection(?string $name = null): Connection
@@ -128,7 +128,7 @@ class SpoolrailManager
             };
         }
 
-        return new Connection($driver, $this->serializer);
+        return new Connection($driver, $this->envelope);
     }
 
     /**
@@ -187,16 +187,16 @@ class SpoolrailManager
             );
         }
 
-        $connectionConfig = new RabbitMqConnectionConfig($connectionName, $config);
-        $managementClient = new RabbitMqManagementClient(
+        $connectionConfig = new ConnectionConfig($connectionName, $config);
+        $managementClient = new ManagementClient(
             $connectionConfig,
             $this->app->make(HttpFactory::class),
         );
 
         return new RabbitMqDriver(
             $connectionConfig,
-            new RabbitMqConnectionFactory,
-            new RabbitMqTopology($connectionConfig, $managementClient),
+            new Connector,
+            new Topology($connectionConfig, $managementClient),
             $this->app->make(OwnershipPrefix::class),
         );
     }

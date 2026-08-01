@@ -24,11 +24,11 @@ Spoolrail is a Laravel message broker library that provides a unified interface 
 
 **ArrayDriver is simulation-only**: The array driver stores messages in memory and does not manage topology. It exists for testing and local development, not as a production transport.
 
-**MessageSerializer is internal**: The serializer enforces a specific JSON envelope format and is not designed for customization. Changing the envelope format breaks compatibility with all existing messages in the broker.
+**MessageEnvelope is internal**: The envelope encodes and decodes a specific JSON representation and is not designed for customization. Changing that representation breaks compatibility with all existing messages in the broker.
 
-**SubscriptionConsumer bridges to Laravel queues**: The consumer does not invoke handlers directly. It deserializes messages and dispatches them to Laravel's queue system, which then invokes handlers. This decouples message receipt from message processing.
+**SubscriptionConsumer bridges to Laravel queues**: The consumer does not invoke handlers directly. It decodes message envelopes and dispatches the resulting messages to Laravel's queue system, which then invokes handlers. This decouples message receipt from message processing.
 
-**ManagedTopology is optional**: Drivers are not required to support topology management. The array driver does not implement ManagedTopology, and topology sync operations skip connections without managed topology.
+**CanManageTopology is optional**: Drivers are not required to support topology management. The array driver does not implement CanManageTopology, and topology sync operations skip connections without that capability.
 
 **Publishing is subscription-independent**: Publishing depends only on the logical topic and does not require the publishing application to declare or know about subscriptions. A publisher-only application assumes receiving applications have synchronized shared topics before publication begins. Publishing to a topic with no subscriptions succeeds.
 

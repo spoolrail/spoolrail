@@ -15,13 +15,13 @@ class SyncCommand extends Command
 
     public function handle(SyncTopology $syncTopology): int
     {
-        $sync = $syncTopology();
+        $result = $syncTopology();
 
-        foreach ($sync->managedConnectionNames as $connectionName) {
+        foreach ($result->syncedConnectionNames as $connectionName) {
             $this->components->info("Synchronized topology for connection [$connectionName].");
         }
 
-        foreach ($sync->unmanagedConnectionNames as $connectionName) {
+        foreach ($result->unmanagedConnectionNames as $connectionName) {
             $this->components->warn("Connection [$connectionName] has no package-managed topology and was not changed.");
         }
 
