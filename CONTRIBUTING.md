@@ -77,7 +77,14 @@ The Pest 5 upgrade is deferred until after Laravel 12 support is dropped due to 
 
 ## Claude Setup (Optional)
 
-`CLAUDE.md` is .gitignored by design. Expose `AGENTS.md` to Claude with a symlink or an import file.
+Claude-specific files are ignored so the repository can keep `AGENTS.md` and `.agents/skills` as its canonical agent guidance. Expose them to Claude Code with local symlinks:
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+
+mkdir -p .claude
+ln -s ../.agents/skills .claude/skills
+```
 
 ## PhpStorm Setup (Optional)
 

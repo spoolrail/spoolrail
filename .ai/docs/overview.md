@@ -1,13 +1,59 @@
 # Package Overview
 
-Spoolrail brings topic-based message brokering to Laravel. An application publishes an immutable `Message` to a logical topic on a named connection. Topics use fanout: every subscription for that topic on the same connection receives its own delivery. Publishers name only the topic and do not depend on the number, identity, or location of its subscribers, so receiving applications can add subscriptions without changing publishing code.
+Spoolrail is a Laravel message broker library that provides a unified interface for publishing and consuming messages across different transports.
 
-`Message` is the contract shared by publishers and handlers. It carries an ID, type, payload, and publication time, but no topic, subscription, handler, or broker receipt. Spoolrail stamps and serializes the message into one JSON envelope before invoking a driver. Drivers therefore work with serialized bodies and keep transport-specific connections, receipts, and settlement state outside the application-facing model.
+## Protected Outcomes
 
-Receiving applications declare subscriptions that tie a topic and stable subscription name to a handler, a Spoolrail connection, and a Laravel Queue destination. Active declarations drive fanout in the Array driver and resource planning for managed transports. The stable name continues into Laravel Queue; `drainMessagesQueuedFor()` can map a former name to a replacement for already queued jobs without making that former name a broker subscription.
+**Message identity stability**: Messages are immutable once created and use UUID v7 identifiers. This prevents confusion about message identity when messages are serialized, transported, and deserialized across system boundaries. The UUID v7 requirement ensures time-ordering, which supports debugging and replay scenarios.
 
-Logical topics are shared fanout points; each receiving application owns the queues, bindings, or equivalent resources created for its subscriptions under its ownership prefix. Synchronization groups active subscriptions by connection and checks every targeted managed connection before creating missing resources. Undeclared-subscription deletion removes only receive-side resources owned by the application, while deleting a shared topic is a separate operation that refuses topics with live bindings.
+**Transport-level delivery guarantees**: The RabbitMQ driver uses publisher confirms and persistent delivery mode. This ensures messages are not lost in transit between publisher and broker, or between broker and consumer. The tradeoff is reduced throughput compared to non-persistent messaging.
 
-The transport contract covers publication and consumption, while topology management is an optional driver capability. The Array driver provides an in-process broker for tests and local simulation; RabbitMQ provides the production transport and managed topology. Transport-neutral subscription and topology code does not depend on either concrete driver, which leaves room for drivers with different consumption lifecycles or infrastructure ownership.
+**Topology ownership isolation**: The ownership prefix namespaces receive-side resources (queues) to prevent conflicts when multiple applications share a broker. Without this, applications could accidentally consume each other's messages or delete each other's queues.
 
-Consumption hands a broker delivery to Laravel Queue rather than running application work inside the transport driver. The driver keeps its receipt while Spoolrail deserializes the message, captures the handler's Queue policy and middleware, and pushes a job containing the message and subscription name. A successful push allows the driver to settle the broker delivery; Laravel Queue then owns handler execution, retries, and failures. When the job runs, it resolves the current handler without recalculating the Queue policy captured at handoff.
+**Safe subscription evolution**: The drain mechanism allows subscription renames without losing in-flight messages. When a subscription is renamed, the old name becomes a drain target that routes queued messages to the new subscription. This prevents message loss during deployment transitions.
+
+**Handler behavior preservation**: Queue job attributes (tries, backoff, timeout, maxExceptions) are captured from handler classes at dispatch time, not at job creation. This ensures handler-defined retry behavior is preserved even when messages are queued for later processing.
+
+**Publication semantics**: When broker confirmation times out, the outcome is ambiguous — Spoolrail cannot prove whether the message was accepted, so it does not retry automatically. Success confirms broker acceptance, not subscription delivery.
+
+**Explicit topology management**: Subscription routes are the sole declaration source for broker topology. Publication and consumption never create or reconcile infrastructure implicitly. A preflight validation checks the complete declared topology before any creation; any incompatibility anywhere prevents creation everywhere. Destructive changes (deletion, recreation) remain explicit commands.
+
+## Non-Obvious Boundaries
+
+**Connection is a thin wrapper**: Connection delegates all transport operations to its driver and does not manage connection lifecycle. The driver owns the connection state and is responsible for reconnection and cleanup.
+
+**ArrayDriver is simulation-only**: The array driver stores messages in memory and does not manage topology. It exists for testing and local development, not as a production transport.
+
+**MessageSerializer is internal**: The serializer enforces a specific JSON envelope format and is not designed for customization. Changing the envelope format breaks compatibility with all existing messages in the broker.
+
+**SubscriptionConsumer bridges to Laravel queues**: The consumer does not invoke handlers directly. It deserializes messages and dispatches them to Laravel's queue system, which then invokes handlers. This decouples message receipt from message processing.
+
+**ManagedTopology is optional**: Drivers are not required to support topology management. The array driver does not implement ManagedTopology, and topology sync operations skip connections without managed topology.
+
+**Publishing is subscription-independent**: Publishing depends only on the logical topic and does not require the publishing application to declare or know about subscriptions. A publisher-only application assumes receiving applications have synchronized shared topics before publication begins. Publishing to a topic with no subscriptions succeeds.
+
+## Cross-Component Compatibility Costs
+
+**Message structure changes**: Modifying the Message class fields or the JSON envelope format breaks deserialization of all existing messages in the broker. Any change requires a migration strategy for in-flight messages.
+
+**LogicalName pattern changes**: The pattern `/\\A[A-Za-z][A-Za-z0-9_-]{2,}\\z/` governs topic and subscription names. Changing it invalidates existing resource names in the broker and breaks applications using the old naming convention.
+
+**Handoff contract changes**: The driver's consume method passes a serialized body string to the handoff closure. Changing this contract breaks all consumers and the SubscriptionConsumer bridge.
+
+**OwnershipPrefix validation changes**: The prefix pattern `/\\A[A-Za-z][A-Za-z0-9_-]*\\z/` governs resource naming. Changing it breaks existing deployments that rely on the current prefix format.
+
+**Handler queue policy changes**: Modifying how HandlerQueuePolicy captures attributes affects all message handlers. Handlers that rely on specific attribute behavior may need updates.
+
+## Design Rationale
+
+**Why UUID v7**: UUID v7 provides time-ordering, which supports debugging (messages can be sorted by creation time) and replay scenarios (messages can be replayed in order).
+
+**Why millisecond timestamp precision**: The published_at timestamp uses millisecond precision (`Y-m-d\\TH:i:s.v\\Z`). This balances precision with storage efficiency and avoids microsecond-level noise that rarely matters for message ordering.
+
+**Why 256 KiB envelope limit**: The Connection class enforces a maximum envelope size of 256 KiB (262,144 bytes) — the AWS SQS ceiling and smallest across supported transports. This shared limit prevents applications from discovering after switching drivers that previously accepted messages are too large for another transport.
+
+**Why reject transactional database queues**: SubscriptionConsumer rejects Laravel's database queue when its connection has an open transaction. This prevents deadlocks that occur when the queue tries to insert a job while the transaction is still open. The tradeoff is that applications using database queues must commit or rollback before consuming.
+
+**Why drain instead of direct rename**: Direct subscription rename would lose messages already queued under the old name. The drain mechanism preserves these messages by routing them to the new subscription, at the cost of additional complexity in the subscription registry.
+
+**Why accept ambiguous publication outcomes**: When a publisher confirmation times out, Spoolrail cannot prove whether the broker accepted the message before the confirmation was lost. Retrying the original message would publish another envelope with the same logical ID but a new `publishedAt` timestamp, creating a duplicate. This ambiguity is surfaced rather than hidden behind automatic retry or a generic receipt that the driver cannot justify.

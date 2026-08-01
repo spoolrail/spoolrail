@@ -36,9 +36,11 @@ phpunit.xml
 phpstan.neon
 
 # Agents
-.agents/
+.agents/*
+!.agents/skills/
 .claude/
 .codex/
+.pi/
 .questline/
 .cursor/
 .gemini/
