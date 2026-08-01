@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
 use Spoolrail\Spoolrail\Connection;
-use Spoolrail\Spoolrail\Contracts\ClosableDriver;
+use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\MessageSerializer;
+use Spoolrail\Spoolrail\MessageEnvelope;
 
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
@@ -16,7 +16,7 @@ afterEach(function (): void {
 
 test('closes a driver that owns external resources', function (): void {
     // --- Arrange ---
-    $driver = new class implements ClosableDriver, Driver
+    $driver = new class implements CanClose, Driver
     {
         public bool $closed = false;
 
@@ -29,7 +29,7 @@ test('closes a driver that owns external resources', function (): void {
             $this->closed = true;
         }
     };
-    $connection = new Connection($driver, new MessageSerializer);
+    $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---
     $connection->close();
@@ -49,8 +49,8 @@ test('publishes a normalized message envelope through the raw driver', function 
             $publishedTopic = $topic;
             $publishedBody = $body;
         });
-    $serializer = new MessageSerializer;
-    $connection = new Connection($driver, $serializer);
+    $envelope = new MessageEnvelope;
+    $connection = new Connection($driver, $envelope);
 
     CarbonImmutable::setTestNow('2026-07-15 14:23:08.417999 UTC');
     $original = Message::make('order.created', ['reference' => 'A-42']);
@@ -65,14 +65,14 @@ test('publishes a normalized message envelope through the raw driver', function 
     expect($published->payload)->toBe($original->payload);
     expect($published->publishedAt?->format('Y-m-d H:i:s.u e'))->toBe('2026-07-15 14:23:08.417000 UTC');
     expect($original->publishedAt)->toBeNull();
-    expect($serializer->deserialize($publishedBody))->toEqual($published);
+    expect($envelope->decode($publishedBody))->toEqual($published);
 });
 
 test('restamps repeated publications of the same logical message', function (): void {
     // --- Arrange ---
     $driver = Mockery::mock(Driver::class);
     $driver->shouldReceive('publish')->twice();
-    $connection = new Connection($driver, new MessageSerializer);
+    $connection = new Connection($driver, new MessageEnvelope);
     $original = Message::make('order.created', []);
     CarbonImmutable::setTestNow('2026-07-15 14:23:08.417999 UTC');
 
@@ -93,7 +93,7 @@ test('rejects payloads that cannot cross the JSON boundary before raw publicatio
     // --- Arrange ---
     $driver = Mockery::mock(Driver::class);
     $driver->allows('publish');
-    $connection = new Connection($driver, new MessageSerializer);
+    $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---
     $action = fn (): Message => $connection->publish(
@@ -117,12 +117,12 @@ test('accepts an envelope at the shared size limit and rejects the next byte', f
         ->andReturnUsing(function (string $topic, string $body) use (&$publishedBodies): void {
             $publishedBodies[] = $body;
         });
-    $serializer = new MessageSerializer;
-    $connection = new Connection($driver, $serializer);
+    $envelope = new MessageEnvelope;
+    $connection = new Connection($driver, $envelope);
 
     $message = Message::make('order.created', ['body' => '']);
     $stamped = $message->withPublishedAt(CarbonImmutable::now('UTC'));
-    $emptyEnvelopeBytes = strlen($serializer->serialize($stamped));
+    $emptyEnvelopeBytes = strlen($envelope->encode($stamped));
     $atLimit = Message::make('order.created', [
         'body' => str_repeat('a', Connection::MAX_ENVELOPE_BYTES - $emptyEnvelopeBytes),
     ]);
@@ -150,7 +150,7 @@ test('rejects a non-portable topic before raw publication', function (): void {
     // --- Arrange ---
     $driver = Mockery::mock(Driver::class);
     $driver->allows('publish');
-    $connection = new Connection($driver, new MessageSerializer);
+    $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---
     $action = fn (): Message => $connection->publish(

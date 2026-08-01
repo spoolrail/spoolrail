@@ -10,14 +10,14 @@ use Illuminate\Http\Client\Response;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Throwable;
 
-class RabbitMqManagementClient
+class ManagementClient
 {
     private const int PAGE_SIZE = 500;
 
-    private ?RabbitMqManagementConfig $managementConfig = null;
+    private ?ManagementConfig $managementConfig = null;
 
     public function __construct(
-        private readonly RabbitMqConnectionConfig $config,
+        private readonly ConnectionConfig $config,
         private readonly Factory $http,
     ) {}
 
@@ -150,17 +150,17 @@ class RabbitMqManagementClient
 
     public function declareExchange(string $exchange): void
     {
-        $this->mutation(
+        $this->request(
             'PUT',
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange),
-            [
+            operation: "creating exchange [$exchange]",
+            payload: [
                 'type' => 'fanout',
                 'durable' => true,
                 'auto_delete' => false,
                 'internal' => false,
                 'arguments' => (object) [],
             ],
-            "creating exchange [$exchange]",
         );
     }
 
@@ -169,51 +169,48 @@ class RabbitMqManagementClient
      */
     public function declareQueue(string $queue, array $arguments): void
     {
-        $this->mutation(
+        $this->request(
             'PUT',
             'queues/'.$this->virtualHostSegment().'/'.$this->segment($queue),
-            [
+            operation: "creating queue [$queue]",
+            payload: [
                 'durable' => true,
                 'auto_delete' => false,
                 'arguments' => $arguments === [] ? (object) [] : $arguments,
             ],
-            "creating queue [$queue]",
         );
     }
 
     public function bindQueue(string $exchange, string $queue): void
     {
-        $this->mutation(
+        $this->request(
             'POST',
             'bindings/'.$this->virtualHostSegment()
                 .'/e/'.$this->segment($exchange)
                 .'/q/'.$this->segment($queue),
-            [
+            operation: "binding exchange [$exchange] to queue [$queue]",
+            payload: [
                 'routing_key' => '',
                 'arguments' => (object) [],
             ],
-            "binding exchange [$exchange] to queue [$queue]",
         );
     }
 
     public function deleteQueue(string $queue): void
     {
-        $this->mutation(
+        $this->requestAllowingNotFound(
             'DELETE',
             'queues/'.$this->virtualHostSegment().'/'.$this->segment($queue),
-            [],
-            "deleting queue [$queue]",
-            allowNotFound: true,
+            operation: "deleting queue [$queue]",
         );
     }
 
     public function deleteExchangeIfUnused(string $exchange): void
     {
-        $this->mutation(
+        $this->request(
             'DELETE',
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange),
-            [],
-            "deleting topic [$exchange]",
+            operation: "deleting topic [$exchange]",
             query: ['if-unused' => 'true'],
         );
     }
@@ -234,7 +231,7 @@ class RabbitMqManagementClient
      */
     private function find(string $path, string $operation): ?array
     {
-        $response = $this->request('GET', $path, $operation, allowNotFound: true);
+        $response = $this->requestAllowingNotFound('GET', $path, $operation);
 
         if ($response->notFound()) {
             return null;
@@ -339,45 +336,53 @@ class RabbitMqManagementClient
      * @param  array<string, mixed>  $payload
      * @param  array<string, string>  $query
      */
-    private function mutation(
+    private function request(
         string $method,
         string $path,
-        array $payload,
         string $operation,
-        bool $allowNotFound = false,
+        array $payload = [],
         array $query = [],
-    ): void {
-        $this->request(
-            $method,
-            $path,
+    ): Response {
+        return $this->requireSuccessfulResponse(
+            $this->sendRequest($method, $path, $operation, $payload, $query),
             $operation,
-            $payload,
-            $allowNotFound,
-            $query,
         );
+    }
+
+    private function requestAllowingNotFound(
+        string $method,
+        string $path,
+        string $operation,
+    ): Response {
+        $response = $this->sendRequest($method, $path, $operation, [], []);
+
+        if ($response->notFound()) {
+            return $response;
+        }
+
+        return $this->requireSuccessfulResponse($response, $operation);
     }
 
     /**
      * @param  array<string, mixed>  $payload
      * @param  array<string, string>  $query
      */
-    private function request(
+    private function sendRequest(
         string $method,
         string $path,
         string $operation,
-        array $payload = [],
-        bool $allowNotFound = false,
-        array $query = [],
+        array $payload,
+        array $query,
     ): Response {
         $options = array_filter([
             'json' => $payload,
             'query' => $query,
         ]);
 
-        $pending = $this->pendingRequest();
+        $pendingRequest = $this->pendingRequest();
 
         try {
-            $response = $pending->send($method, $path, $options);
+            $response = $pendingRequest->send($method, $path, $options);
         } catch (Throwable $exception) {
             throw RabbitMqManagementException::requestFailed(
                 $this->config->connectionName,
@@ -386,7 +391,12 @@ class RabbitMqManagementClient
             );
         }
 
-        if ($response->successful() || ($allowNotFound && $response->notFound())) {
+        return $response;
+    }
+
+    private function requireSuccessfulResponse(Response $response, string $operation): Response
+    {
+        if ($response->successful()) {
             return $response;
         }
 
@@ -404,10 +414,10 @@ class RabbitMqManagementClient
     {
         $managementConfig = $this->managementConfig();
 
-        /** @var PendingRequest $pending */
-        $pending = $this->http->baseUrl($this->apiUrl());
+        /** @var PendingRequest $pendingRequest */
+        $pendingRequest = $this->http->baseUrl($this->apiUrl());
 
-        return $pending
+        return $pendingRequest
             ->withBasicAuth($managementConfig->username, $managementConfig->password)
             ->acceptJson()
             ->asJson()
@@ -437,7 +447,7 @@ class RabbitMqManagementClient
         return rawurlencode($value);
     }
 
-    private function managementConfig(): RabbitMqManagementConfig
+    private function managementConfig(): ManagementConfig
     {
         return $this->managementConfig ??= $this->config->management();
     }

@@ -15,11 +15,11 @@ use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 /**
  * @internal
  */
-class MessageSerializer
+class MessageEnvelope
 {
     private const string TIMESTAMP_FORMAT = 'Y-m-d\TH:i:s.v\Z';
 
-    public function serialize(Message $message): string
+    public function encode(Message $message): string
     {
         return json_encode([
             'id' => $message->id,
@@ -29,7 +29,7 @@ class MessageSerializer
         ], JSON_THROW_ON_ERROR);
     }
 
-    public function deserialize(string $json): Message
+    public function decode(string $json): Message
     {
         try {
             $envelope = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
@@ -41,7 +41,7 @@ class MessageSerializer
             throw InvalidMessageEnvelopeException::mustBeObject();
         }
 
-        return Message::fromTransport(
+        return Message::fromEnvelope(
             $this->id($envelope),
             $this->type($envelope),
             $this->payload($envelope),

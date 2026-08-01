@@ -10,22 +10,22 @@ use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use PhpAmqpLib\Connection\AMQPConnectionFactory;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 
-class RabbitMqConnectionFactory
+class Connector
 {
-    public function create(RabbitMqConnectionConfig $config): AbstractConnection
+    public function connect(ConnectionConfig $config): AbstractConnection
     {
         $hosts = $config->hosts();
         $lastHost = array_pop($hosts);
 
         foreach ($hosts as $host) {
             try {
-                return $this->connect($config, $host);
+                return $this->connectToHost($config, $host);
             } catch (Exception) {
                 // Try the next configured host while establishing the connection.
             }
         }
 
-        return $this->connect($config, $lastHost);
+        return $this->connectToHost($config, $lastHost);
     }
 
     /**
@@ -41,7 +41,7 @@ class RabbitMqConnectionFactory
             throw RabbitMqTopologyException::unsupportedVersion('unknown');
         }
 
-        if (version_compare($version, RabbitMqVersion::MINIMUM, '<')) {
+        if (version_compare($version, Version::MINIMUM, '<')) {
             $amqpConnection->close();
 
             throw RabbitMqTopologyException::unsupportedVersion($version);
@@ -64,40 +64,40 @@ class RabbitMqConnectionFactory
     /**
      * @internal
      */
-    public function amqpConfig(RabbitMqConnectionConfig $config, string $host): AMQPConnectionConfig
+    public function amqpConfiguration(ConnectionConfig $config, string $host): AMQPConnectionConfig
     {
-        $amqpConfig = new AMQPConnectionConfig;
-        $amqpConfig->setHost($host);
-        $amqpConfig->setPort($config->port());
-        $amqpConfig->setUser($config->username());
-        $amqpConfig->setPassword($config->password());
-        $amqpConfig->setVhost($config->virtualHost());
-        $amqpConfig->setConnectionTimeout($config->connectionTimeout());
+        $amqpConfiguration = new AMQPConnectionConfig;
+        $amqpConfiguration->setHost($host);
+        $amqpConfiguration->setPort($config->port());
+        $amqpConfiguration->setUser($config->username());
+        $amqpConfiguration->setPassword($config->password());
+        $amqpConfiguration->setVhost($config->virtualHost());
+        $amqpConfiguration->setConnectionTimeout($config->connectionTimeout());
 
         $heartbeat = $config->heartbeat();
 
-        $amqpConfig->setHeartbeat($heartbeat);
-        $amqpConfig->setKeepalive($heartbeat === 0);
-        $amqpConfig->setConnectionName("spoolrail:$config->connectionName");
+        $amqpConfiguration->setHeartbeat($heartbeat);
+        $amqpConfiguration->setKeepalive($heartbeat === 0);
+        $amqpConfiguration->setConnectionName("spoolrail:$config->connectionName");
 
         $readWriteTimeout = max(3.0, $heartbeat * 2.0);
 
-        $amqpConfig->setReadTimeout($readWriteTimeout);
-        $amqpConfig->setWriteTimeout($readWriteTimeout);
+        $amqpConfiguration->setReadTimeout($readWriteTimeout);
+        $amqpConfiguration->setWriteTimeout($readWriteTimeout);
 
         if ($config->scheme() === 'amqps') {
-            $amqpConfig->setIsSecure(true);
-            $amqpConfig->setSslVerify(true);
-            $amqpConfig->setSslVerifyName(true);
-            $amqpConfig->setSslCaCert($config->caFile());
+            $amqpConfiguration->setIsSecure(true);
+            $amqpConfiguration->setSslVerify(true);
+            $amqpConfiguration->setSslVerifyName(true);
+            $amqpConfiguration->setSslCaCert($config->caFile());
         }
 
-        return $amqpConfig;
+        return $amqpConfiguration;
     }
 
-    private function connect(RabbitMqConnectionConfig $config, string $host): AbstractConnection
+    private function connectToHost(ConnectionConfig $config, string $host): AbstractConnection
     {
-        $amqpConnection = AMQPConnectionFactory::create($this->amqpConfig($config, $host));
+        $amqpConnection = AMQPConnectionFactory::create($this->amqpConfiguration($config, $host));
 
         $this->assertSupportedVersion($amqpConnection);
 

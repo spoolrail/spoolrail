@@ -25,7 +25,7 @@ readonly class DeleteUndeclaredSubscriptions
     {
         $targetPrefix = $this->targetPrefix($retiredPrefix);
 
-        $topology = $this->manager->connection($connectionName)->managedTopology()
+        $topology = $this->manager->connection($connectionName)->topology()
             ?? throw new LogicException("Spoolrail connection [$connectionName] does not provide package-managed topology.");
 
         $undeclaredResourceNames = $topology->undeclaredSubscriptionResourceNames(

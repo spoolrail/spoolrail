@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Topology;
 
-use Spoolrail\Spoolrail\Contracts\ManagedTopology;
+use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
@@ -19,7 +19,7 @@ readonly class SyncTopology
         private OwnershipPrefix $prefix,
     ) {}
 
-    public function __invoke(): SyncTopologyResult
+    public function __invoke(): SyncResult
     {
         $subscriptionsByConnection = $this->subscriptionsByConnection();
         $plansByConnection = [];
@@ -28,9 +28,9 @@ readonly class SyncTopology
 
         foreach ($subscriptionsByConnection as $connectionName => $subscriptions) {
             try {
-                $topology = $this->manager->connection($connectionName)->managedTopology();
+                $topology = $this->manager->connection($connectionName)->topology();
 
-                if (! $topology instanceof ManagedTopology) {
+                if (! $topology instanceof CanManageTopology) {
                     $unmanagedConnectionNames[] = $connectionName;
 
                     continue;
@@ -53,7 +53,7 @@ readonly class SyncTopology
             $plan->apply();
         }
 
-        return new SyncTopologyResult(
+        return new SyncResult(
             array_keys($plansByConnection),
             $unmanagedConnectionNames,
         );

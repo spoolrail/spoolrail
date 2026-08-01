@@ -5,17 +5,17 @@ declare(strict_types=1);
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementClient;
+use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\ManagementClient;
 
-test('maps the Management HTTPS endpoint identity and private CA into a verified HTTP request', function (): void {
+test('maps the management HTTPS endpoint identity and private CA into a verified HTTP request', function (): void {
     // --- Arrange ---
     $http = new Factory;
     $http->fake([
         '*' => $http->response(['rabbitmq_version' => '4.3.2']),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
+    $client = new ManagementClient(
+        new ConnectionConfig('events', [
             'username' => 'publisher',
             'password' => 'runtime-secret',
             'management' => [
@@ -53,8 +53,8 @@ test('uses the system trust store and AMQP credentials when management overrides
     $http->fake([
         '*' => $http->response(['rabbitmq_version' => '4.3.2']),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
+    $client = new ManagementClient(
+        new ConnectionConfig('events', [
             'username' => 'publisher',
             'password' => 'runtime-secret',
             'ca_file' => __FILE__,
@@ -92,8 +92,8 @@ test('filters owned queues by a literal prefix with bounded low-cost pagination'
             'items' => [],
         ]),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', []),
+    $client = new ManagementClient(
+        new ConnectionConfig('events', []),
         $http,
     );
 
@@ -136,8 +136,8 @@ test('returns owned queues from every Management API page', function (): void {
                 'items' => $secondPage,
             ]),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', []),
+    $client = new ManagementClient(
+        new ConnectionConfig('events', []),
         $http,
     );
 
@@ -163,8 +163,8 @@ test('rejects an invalid paginated queue response', function (): void {
             'items' => [],
         ]),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', []),
+    $client = new ManagementClient(
+        new ConnectionConfig('events', []),
         $http,
     );
 
@@ -180,8 +180,8 @@ test('reports Management API authentication and permission failures without cred
     $http->fake([
         '*' => $http->response(status: $status),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
+    $client = new ManagementClient(
+        new ConnectionConfig('events', [
             'host' => 'rabbit.internal',
             'username' => 'publisher',
             'password' => 'runtime-secret',
@@ -216,8 +216,8 @@ test('preserves TLS request failure diagnostics without surfacing credentials', 
             'cURL error 60: SSL certificate problem: unable to get local issuer certificate',
         ),
     ]);
-    $client = new RabbitMqManagementClient(
-        new RabbitMqConnectionConfig('events', [
+    $client = new ManagementClient(
+        new ConnectionConfig('events', [
             'username' => 'publisher',
             'password' => 'runtime-secret',
             'management' => [

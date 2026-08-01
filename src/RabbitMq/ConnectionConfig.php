@@ -7,7 +7,7 @@ namespace Spoolrail\Spoolrail\RabbitMq;
 use Illuminate\Support\Arr;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 
-readonly class RabbitMqConnectionConfig
+readonly class ConnectionConfig
 {
     private const array FORBIDDEN_MANAGEMENT_URL_PARTS = [
         'user' => true,
@@ -118,11 +118,11 @@ readonly class RabbitMqConnectionConfig
         return $this->integer('prefetch', 10);
     }
 
-    public function management(): RabbitMqManagementConfig
+    public function management(): ManagementConfig
     {
         $config = Arr::array($this->config, 'management', []);
 
-        return new RabbitMqManagementConfig(
+        return new ManagementConfig(
             $this->managementUrl($config),
             Arr::string($config, 'username', $this->username()),
             Arr::string($config, 'password', $this->password()),

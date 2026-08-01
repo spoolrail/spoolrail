@@ -6,7 +6,7 @@ namespace Spoolrail\Spoolrail\Contracts;
 
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 
-interface ManagedTopology
+interface CanManageTopology
 {
     /**
      * @param  list<Subscription>  $subscriptions

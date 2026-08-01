@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqConnectionConfig;
-use Spoolrail\Spoolrail\RabbitMq\RabbitMqManagementConfig;
+use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
+use Spoolrail\Spoolrail\RabbitMq\ManagementConfig;
 
-test('interprets the complete RabbitMQ connection config', function (): void {
-    $config = new RabbitMqConnectionConfig('events', [
+test('interprets the complete RabbitMQ connection configuration', function (): void {
+    $config = new ConnectionConfig('events', [
         'scheme' => 'amqps',
         'host' => 'rabbit.internal',
         'port' => '5679',
@@ -47,7 +47,7 @@ test('interprets the complete RabbitMQ connection config', function (): void {
 });
 
 test('applies RabbitMQ local defaults and keeps management TLS trust independent', function (): void {
-    $config = new RabbitMqConnectionConfig('events', [
+    $config = new ConnectionConfig('events', [
         'ca_file' => __FILE__,
     ]);
 
@@ -70,7 +70,7 @@ test('applies RabbitMQ local defaults and keeps management TLS trust independent
 });
 
 test('preserves the configured order of multiple RabbitMQ hosts', function (): void {
-    $config = new RabbitMqConnectionConfig('events', [
+    $config = new ConnectionConfig('events', [
         'hosts' => [
             'rabbit-a.internal',
             'rabbit-b.internal',
@@ -84,7 +84,7 @@ test('preserves the configured order of multiple RabbitMQ hosts', function (): v
 });
 
 test('rejects conflicting host forms, empty host lists, and unsupported schemes', function (array $config, string $setting): void {
-    expect(fn (): RabbitMqConnectionConfig => new RabbitMqConnectionConfig('events', $config))
+    expect(fn (): ConnectionConfig => new ConnectionConfig('events', $config))
         ->toThrow(function (InvalidConfigException $exception) use ($setting): void {
             expect($exception->getMessage())->toContain("setting [$setting]");
         });
@@ -98,7 +98,7 @@ test('rejects conflicting host forms, empty host lists, and unsupported schemes'
 ]);
 
 test('allows one management credential to override its corresponding AMQP credential', function (): void {
-    $config = new RabbitMqConnectionConfig('events', [
+    $config = new ConnectionConfig('events', [
         'username' => 'publisher',
         'password' => 'publisher-secret',
         'management' => [
@@ -112,11 +112,11 @@ test('allows one management credential to override its corresponding AMQP creden
 });
 
 test('rejects management URLs with credentials, queries, or fragments', function (array $management, string $setting): void {
-    $config = new RabbitMqConnectionConfig('events', [
+    $config = new ConnectionConfig('events', [
         'management' => $management,
     ]);
 
-    expect(fn (): RabbitMqManagementConfig => $config->management())
+    expect(fn (): ManagementConfig => $config->management())
         ->toThrow(function (InvalidConfigException $exception) use ($setting): void {
             expect($exception->getMessage())->toContain("setting [$setting]");
         });
@@ -133,13 +133,13 @@ test('rejects management URLs with credentials, queries, or fragments', function
 ]);
 
 test('never includes configured credentials in config diagnostics', function (): void {
-    $connectionConfig = new RabbitMqConnectionConfig('events', [
+    $connectionConfig = new ConnectionConfig('events', [
         'management' => [
             'url' => 'https://topology:management-secret@rabbit.internal:15671/api',
         ],
     ]);
 
-    expect(fn (): RabbitMqManagementConfig => $connectionConfig->management())
+    expect(fn (): ManagementConfig => $connectionConfig->management())
         ->toThrow(function (InvalidConfigException $exception): void {
             expect($exception->getMessage())
                 ->not->toContain('topology')

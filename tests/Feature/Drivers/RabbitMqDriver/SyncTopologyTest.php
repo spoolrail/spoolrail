@@ -6,7 +6,7 @@ use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\MessageSerializer;
+use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
@@ -95,5 +95,5 @@ test('accepts repeated synchronization without replacing an existing quorum queu
     expect($secondSync)->toBe(0);
     expect($queue)->toMatchArray(['type' => 'quorum']);
     expect(data_get($queue, 'arguments.x-delivery-limit'))->toBe(-1);
-    expect((new MessageSerializer)->deserialize($body))->toEqual($published);
+    expect((new MessageEnvelope)->decode($body))->toEqual($published);
 });

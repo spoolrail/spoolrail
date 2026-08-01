@@ -68,6 +68,11 @@ class HandlerQueuePolicy
             return $handler->{$property};
         }
 
+        return $this->attributeValue($attribute);
+    }
+
+    private function attributeValue(object $attribute): mixed
+    {
         $values = get_object_vars($attribute);
 
         return $values === [] ? true : reset($values);

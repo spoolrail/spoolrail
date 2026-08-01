@@ -6,7 +6,7 @@ namespace Spoolrail\Spoolrail\RabbitMq;
 
 use LengthException;
 
-class RabbitMqName
+class ResourceName
 {
     public const int MAX_BYTES = 255;
 

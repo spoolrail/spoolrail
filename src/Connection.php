@@ -7,9 +7,9 @@ namespace Spoolrail\Spoolrail;
 use Carbon\CarbonImmutable;
 use Closure;
 use InvalidArgumentException;
-use Spoolrail\Spoolrail\Contracts\ClosableDriver;
+use Spoolrail\Spoolrail\Contracts\CanClose;
+use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
-use Spoolrail\Spoolrail\Contracts\ManagedTopology;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 use Spoolrail\Spoolrail\Topology\LogicalName;
 
@@ -19,7 +19,7 @@ class Connection
 
     public function __construct(
         private readonly Driver $driver,
-        private readonly MessageSerializer $serializer,
+        private readonly MessageEnvelope $envelope,
     ) {}
 
     public function publish(string $topic, Message $message): Message
@@ -31,7 +31,7 @@ class Connection
         }
 
         $stampedMessage = $message->withPublishedAt(CarbonImmutable::now('UTC'));
-        $body = $this->serializer->serialize($stampedMessage);
+        $body = $this->envelope->encode($stampedMessage);
 
         if (strlen($body) > self::MAX_ENVELOPE_BYTES) {
             throw new MessageTooLargeException(strlen($body), self::MAX_ENVELOPE_BYTES);
@@ -53,9 +53,9 @@ class Connection
     /**
      * @internal
      */
-    public function managedTopology(): ?ManagedTopology
+    public function topology(): ?CanManageTopology
     {
-        return $this->driver instanceof ManagedTopology ? $this->driver : null;
+        return $this->driver instanceof CanManageTopology ? $this->driver : null;
     }
 
     /**
@@ -63,7 +63,7 @@ class Connection
      */
     public function close(): void
     {
-        if ($this->driver instanceof ClosableDriver) {
+        if ($this->driver instanceof CanClose) {
             $this->driver->close();
         }
     }

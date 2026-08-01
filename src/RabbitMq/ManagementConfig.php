@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\RabbitMq;
 
-readonly class RabbitMqManagementConfig
+readonly class ManagementConfig
 {
     public function __construct(
         public string $url,

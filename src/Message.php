@@ -42,7 +42,7 @@ readonly class Message
      *
      * @param  array<array-key, mixed>  $payload
      */
-    public static function fromTransport(
+    public static function fromEnvelope(
         string $id,
         string $type,
         array $payload,

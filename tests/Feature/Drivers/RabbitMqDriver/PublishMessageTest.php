@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\MessageSerializer;
+use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
@@ -33,13 +33,13 @@ test('publishes through the next available RabbitMQ host to every subscription',
     );
 
     // --- Assert ---
-    $serializer = new MessageSerializer;
+    $envelope = new MessageEnvelope;
     $deliveries = [];
     $prefix = app(OwnershipPrefix::class)->current();
 
     foreach (["$prefix-warehouse", "$prefix-analytics"] as $queue) {
         $body = $this->drainRabbitMqDeliveries($queue, 1)[0]['payload'];
-        $deliveries[] = $serializer->deserialize($body);
+        $deliveries[] = $envelope->decode($body);
     }
 
     expect($deliveries)->toEqual([$published, $published]);
