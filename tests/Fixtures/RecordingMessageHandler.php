@@ -13,7 +13,7 @@ use Spoolrail\Spoolrail\Message;
 #[MaxExceptions(4)]
 class RecordingMessageHandler implements MessageHandler
 {
-    use HandlerTimeoutPolicy;
+    use HasQueueTimeout;
 
     /** @var list<Message> */
     public static array $messages = [];

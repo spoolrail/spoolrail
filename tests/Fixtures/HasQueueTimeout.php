@@ -7,7 +7,7 @@ namespace Spoolrail\Spoolrail\Tests\Fixtures;
 use Illuminate\Queue\Attributes\Timeout;
 
 #[Timeout(75)]
-trait HandlerTimeoutPolicy
+trait HasQueueTimeout
 {
     // Queue policy is declared on the trait.
 }

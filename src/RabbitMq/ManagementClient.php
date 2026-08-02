@@ -129,7 +129,7 @@ class ManagementClient
     /**
      * @return list<array<string, mixed>>
      */
-    public function exchangeSourceBindings(string $exchange): array
+    public function bindingsFromExchange(string $exchange): array
     {
         return $this->readAll(
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange).'/bindings/source',
@@ -140,7 +140,7 @@ class ManagementClient
     /**
      * @return list<array<string, mixed>>
      */
-    public function exchangeDestinationBindings(string $exchange): array
+    public function bindingsToExchange(string $exchange): array
     {
         return $this->readAll(
             'exchanges/'.$this->virtualHostSegment().'/'.$this->segment($exchange).'/bindings/destination',

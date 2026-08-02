@@ -79,7 +79,7 @@ class DeleteUndeclaredSubscriptionsCommand extends Command
         }
 
         $uninspectedConnectionNames = array_values(array_diff(
-            $manager->potentiallyManagedConnectionNames(),
+            $manager->connectionNamesThatMayManageTopology(),
             [$connectionName],
         ));
 

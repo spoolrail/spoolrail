@@ -30,7 +30,7 @@ readonly class Topology implements CanManageTopology
             $subscriptions,
         );
 
-        $this->assertSupportedVersion();
+        $this->ensureVersionIsSupported();
 
         $defaultQueueType = null;
         $policies = $this->managementClient->policies();
@@ -73,7 +73,7 @@ readonly class Topology implements CanManageTopology
                 continue;
             }
 
-            $this->assertCompatibleQueue(
+            $this->ensureQueueIsCompatible(
                 $queueName,
                 $queue,
                 $policies,
@@ -113,7 +113,7 @@ readonly class Topology implements CanManageTopology
             $subscriptions,
         );
 
-        $this->assertSupportedVersion();
+        $this->ensureVersionIsSupported();
 
         $ownedQueueNames = [];
 
@@ -140,7 +140,7 @@ readonly class Topology implements CanManageTopology
     public function deleteTopic(string $topic): void
     {
         ResourceName::topic($topic);
-        $this->assertSupportedVersion();
+        $this->ensureVersionIsSupported();
 
         $exchange = $this->managementClient->exchange($topic);
 
@@ -148,11 +148,11 @@ readonly class Topology implements CanManageTopology
             throw RabbitMqTopologyException::topicMissing($topic);
         }
 
-        $this->assertCompatibleExchange($topic, $exchange);
+        $this->ensureExchangeIsCompatible($topic, $exchange);
 
         if (
-            $this->managementClient->exchangeSourceBindings($topic) !== []
-            || $this->managementClient->exchangeDestinationBindings($topic) !== []
+            $this->managementClient->bindingsFromExchange($topic) !== []
+            || $this->managementClient->bindingsToExchange($topic) !== []
         ) {
             throw RabbitMqTopologyException::topicHasBindings($topic);
         }
@@ -160,7 +160,7 @@ readonly class Topology implements CanManageTopology
         $this->managementClient->deleteExchangeIfUnused($topic);
     }
 
-    private function assertSupportedVersion(): void
+    private function ensureVersionIsSupported(): void
     {
         $version = $this->managementClient->overview()['rabbitmq_version'] ?? null;
 
@@ -197,7 +197,7 @@ readonly class Topology implements CanManageTopology
             return true;
         }
 
-        $this->assertCompatibleExchange($exchangeName, $exchange);
+        $this->ensureExchangeIsCompatible($exchangeName, $exchange);
 
         return false;
     }
@@ -205,7 +205,7 @@ readonly class Topology implements CanManageTopology
     /**
      * @param  array<string, mixed>  $exchange
      */
-    private function assertCompatibleExchange(string $exchangeName, array $exchange): void
+    private function ensureExchangeIsCompatible(string $exchangeName, array $exchange): void
     {
         $requirements = [
             'type' => 'fanout',
@@ -256,7 +256,7 @@ readonly class Topology implements CanManageTopology
      * @param  list<array<string, mixed>>  $policies
      * @param  list<array<string, mixed>>  $operatorPolicies
      */
-    private function assertCompatibleQueue(
+    private function ensureQueueIsCompatible(
         string $queueName,
         array $queue,
         array $policies,
@@ -287,7 +287,7 @@ readonly class Topology implements CanManageTopology
         }
 
         if ($type === 'quorum') {
-            $this->assertUnlimitedDeliveryLimit(
+            $this->ensureDeliveryLimitIsUnlimited(
                 $queueName,
                 $queue,
                 $policies,
@@ -316,7 +316,7 @@ readonly class Topology implements CanManageTopology
      * @param  list<array<string, mixed>>  $policies
      * @param  list<array<string, mixed>>  $operatorPolicies
      */
-    private function assertUnlimitedDeliveryLimit(
+    private function ensureDeliveryLimitIsUnlimited(
         string $queueName,
         array $queue,
         array $policies,

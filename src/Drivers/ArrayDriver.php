@@ -35,7 +35,7 @@ class ArrayDriver implements Driver
      */
     public function consume(string $subscription, Closure $handoff): void
     {
-        while (($body = $this->nextDelivery($subscription)) !== null) {
+        while (($body = $this->reserveNextDelivery($subscription)) !== null) {
             try {
                 $handoff($body);
             } catch (Throwable $exception) {
@@ -46,7 +46,7 @@ class ArrayDriver implements Driver
         }
     }
 
-    private function nextDelivery(string $subscription): ?string
+    private function reserveNextDelivery(string $subscription): ?string
     {
         if (($this->deliveries[$subscription] ?? []) === []) {
             return null;

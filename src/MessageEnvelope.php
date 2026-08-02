@@ -80,7 +80,7 @@ class MessageEnvelope
             return $type;
         }
 
-        throw InvalidMessageEnvelopeException::emptyType();
+        throw InvalidMessageEnvelopeException::invalidType();
     }
 
     /**

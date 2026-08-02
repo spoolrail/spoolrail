@@ -57,7 +57,7 @@ test('loads application subscription routes when booted without resolving a brok
 
     // --- Act ---
     $provider->boot();
-    $subscription = app(SubscriptionRegistry::class)->find('route-loaded-orders');
+    $subscription = app(SubscriptionRegistry::class)->findOrFail('route-loaded-orders');
 
     // --- Assert ---
     expect($subscription->topic())->toBe('orders');

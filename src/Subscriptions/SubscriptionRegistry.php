@@ -35,7 +35,7 @@ class SubscriptionRegistry
         }
 
         $handler = $this->requireConcreteHandler($handler);
-        $this->assertAvailableName($name);
+        $this->ensureNameIsAvailable($name);
 
         return $this->subscriptions[$name] = new Subscription(
             $topic,
@@ -47,7 +47,7 @@ class SubscriptionRegistry
         );
     }
 
-    public function find(string $name): Subscription
+    public function findOrFail(string $name): Subscription
     {
         return $this->subscriptions[$name]
             ?? throw InvalidSubscriptionException::notRegistered($name);
@@ -55,7 +55,7 @@ class SubscriptionRegistry
 
     public function resolveForQueuedMessage(string $name): Subscription
     {
-        return $this->find($this->drainTargets[$name] ?? $name);
+        return $this->findOrFail($this->drainTargets[$name] ?? $name);
     }
 
     /**
@@ -85,7 +85,7 @@ class SubscriptionRegistry
         return $handler;
     }
 
-    private function assertAvailableName(string $name): void
+    private function ensureNameIsAvailable(string $name): void
     {
         if (isset($this->subscriptions[$name]) || isset($this->drainTargets[$name])) {
             throw InvalidSubscriptionException::duplicateName($name);
@@ -94,7 +94,7 @@ class SubscriptionRegistry
 
     private function registerDrainTarget(string $formerName, string $activeName): void
     {
-        $this->assertAvailableName($formerName);
+        $this->ensureNameIsAvailable($formerName);
 
         $this->drainTargets[$formerName] = $activeName;
     }

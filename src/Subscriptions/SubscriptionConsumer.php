@@ -26,7 +26,7 @@ readonly class SubscriptionConsumer
 
     public function consume(string $subscriptionName): void
     {
-        $subscription = $this->subscriptions->find($subscriptionName);
+        $subscription = $this->subscriptions->findOrFail($subscriptionName);
         $connection = $this->manager->connection(
             $subscription->connectionName($this->manager->defaultConnectionName()),
         );

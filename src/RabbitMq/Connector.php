@@ -31,7 +31,7 @@ class Connector
     /**
      * @internal
      */
-    public function assertSupportedVersion(AbstractConnection $amqpConnection): void
+    public function ensureVersionIsSupported(AbstractConnection $amqpConnection): void
     {
         $version = $this->serverVersion($amqpConnection);
 
@@ -99,7 +99,7 @@ class Connector
     {
         $amqpConnection = AMQPConnectionFactory::create($this->amqpConfiguration($config, $host));
 
-        $this->assertSupportedVersion($amqpConnection);
+        $this->ensureVersionIsSupported($amqpConnection);
 
         return $amqpConnection;
     }

@@ -27,7 +27,7 @@ class InvalidMessageEnvelopeException extends UnexpectedValueException implement
         return new self('The message envelope must contain a valid UUIDv7 ID.');
     }
 
-    public static function emptyType(): self
+    public static function invalidType(): self
     {
         return new self('The message envelope must contain a non-empty type.');
     }

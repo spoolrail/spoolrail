@@ -101,7 +101,7 @@ class SpoolrailManager
     /**
      * @return list<string>
      */
-    public function potentiallyManagedConnectionNames(): array
+    public function connectionNamesThatMayManageTopology(): array
     {
         return array_values(array_filter(
             $this->configuredConnectionNames(),

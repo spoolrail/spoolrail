@@ -66,7 +66,7 @@ test('rejects a detected RabbitMQ version older than 4.3', function (): void {
         ->andReturn(['version' => ['S', '4.2.9']]);
     $amqpConnection->shouldReceive('close')->once();
 
-    expect(fn () => (new Connector)->assertSupportedVersion($amqpConnection))
+    expect(fn () => (new Connector)->ensureVersionIsSupported($amqpConnection))
         ->toThrow(
             RabbitMqTopologyException::class,
             'RabbitMQ [4.2.9] is not supported; Spoolrail requires RabbitMQ 4.3 or later.',
