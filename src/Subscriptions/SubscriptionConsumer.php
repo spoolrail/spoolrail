@@ -11,6 +11,7 @@ use LogicException;
 use PDO;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
+use Spoolrail\Spoolrail\Jobs\SuppressDuplicateMessageHandling;
 use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
 
@@ -22,6 +23,7 @@ readonly class SubscriptionConsumer
         private MessageEnvelope $envelope,
         private QueueFactory $queues,
         private HandlerQueuePolicy $handlerQueuePolicy,
+        private SuppressDuplicateMessageHandling $deduplication,
     ) {}
 
     public function consume(string $subscriptionName): void
@@ -34,6 +36,7 @@ readonly class SubscriptionConsumer
         $queue = $this->queues->connection($subscription->queueConnectionName());
 
         $this->rejectTransactionalDatabaseQueue($queue);
+        $this->deduplication->ensureStoreSupportsLocks();
 
         $connection->consume(
             $subscription->name(),

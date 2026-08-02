@@ -76,4 +76,26 @@ return [
 
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Message Deduplication
+    |--------------------------------------------------------------------------
+    |
+    | Spoolrail hands each consumed message to Laravel Queue at least once,
+    | so a failure between the Queue handoff and the broker acknowledgement
+    | may queue the same message again. Spoolrail remembers handled messages
+    | in the cache store below for "remember" seconds and skips a remembered
+    | duplicate instead of handling it again. One handling attempt may hold
+    | the per-message lock for "lock" seconds, which should exceed the
+    | slowest handler run.
+    |
+    */
+
+    'deduplication' => [
+        'enabled' => env('SPOOLRAIL_DEDUPLICATION', true),
+        'store' => env('SPOOLRAIL_DEDUPLICATION_STORE', env('CACHE_STORE', 'database')),
+        'remember' => 86400,
+        'lock' => 300,
+    ],
+
 ];

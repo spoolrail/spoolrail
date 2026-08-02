@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Jobs;
 
-use Illuminate\Contracts\Container\Container;
+use Illuminate\Container\Container;
 use Illuminate\Queue\InteractsWithQueue;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
@@ -40,5 +40,13 @@ class HandleMessageJob
         $handler = $container->get($subscription->handlerClass());
 
         $handler->handle($this->message);
+    }
+
+    /**
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [Container::getInstance()->make(SuppressDuplicateMessageHandling::class)];
     }
 }
