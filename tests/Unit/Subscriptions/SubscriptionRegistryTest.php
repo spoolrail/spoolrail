@@ -17,7 +17,7 @@ test('rejects a duplicate name without replacing the registered subscription', f
             InvalidSubscriptionException::class,
             'Subscription [warehouse-orders] has already been registered.',
         );
-    expect($subscriptions->active('warehouse-orders'))->toBe($registered);
+    expect($subscriptions->find('warehouse-orders'))->toBe($registered);
 });
 
 test('rejects a queued-message drain name already used by an active subscription', function (): void {

@@ -47,7 +47,7 @@ class SubscriptionRegistry
         );
     }
 
-    public function active(string $name): Subscription
+    public function find(string $name): Subscription
     {
         return $this->subscriptions[$name]
             ?? throw InvalidSubscriptionException::notRegistered($name);
@@ -55,7 +55,7 @@ class SubscriptionRegistry
 
     public function resolveForQueuedMessage(string $name): Subscription
     {
-        return $this->active($this->drainTargets[$name] ?? $name);
+        return $this->find($this->drainTargets[$name] ?? $name);
     }
 
     /**

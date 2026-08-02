@@ -32,7 +32,7 @@ class HandlerQueuePolicy
      *
      * @throws Throwable
      */
-    public function capture(string $handlerClass, Message $message, HandleMessageJob $job): void
+    public function apply(string $handlerClass, Message $message, HandleMessageJob $job): void
     {
         $handler = new ReflectionClass($handlerClass)->newInstanceWithoutConstructor();
 

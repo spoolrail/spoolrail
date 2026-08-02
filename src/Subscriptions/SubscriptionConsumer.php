@@ -26,7 +26,7 @@ readonly class SubscriptionConsumer
 
     public function consume(string $subscriptionName): void
     {
-        $subscription = $this->subscriptions->active($subscriptionName);
+        $subscription = $this->subscriptions->find($subscriptionName);
         $connection = $this->manager->connection(
             $subscription->connectionName($this->manager->defaultConnectionName()),
         );
@@ -48,7 +48,7 @@ readonly class SubscriptionConsumer
         $message = $this->envelope->decode($body);
         $job = new HandleMessageJob($message, $subscription->name());
 
-        $this->handlerQueuePolicy->capture($subscription->handlerClass(), $message, $job);
+        $this->handlerQueuePolicy->apply($subscription->handlerClass(), $message, $job);
 
         $queue->push(
             $job,

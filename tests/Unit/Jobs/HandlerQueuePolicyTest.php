@@ -38,7 +38,7 @@ test('uses property fallbacks and the retry deadline method', function (): void 
     $job = new HandleMessageJob($message, 'property-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
 
     // --- Assert ---
     expect($job->tries)->toBe(3);
@@ -69,7 +69,7 @@ test('uses Laravel Queue attributes before same-class default properties', funct
     $job = new HandleMessageJob($message, 'attribute-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
 
     // --- Assert ---
     expect($job->tries)->toBe(5);
@@ -91,7 +91,7 @@ test('ignores a retry deadline property', function (): void {
     $job = new HandleMessageJob($message, 'property-deadline-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
 
     // --- Assert ---
     expect($job->retryUntil)->toBeNull();
@@ -122,7 +122,7 @@ test('uses methods before properties', function (): void {
     $job = new HandleMessageJob($message, 'method-property-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
 
     // --- Assert ---
     expect($job->tries)->toBe(7);
@@ -150,7 +150,7 @@ test('uses methods before attributes', function (): void {
     $job = new HandleMessageJob($message, 'method-attribute-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
 
     // --- Assert ---
     expect($job->tries)->toBe(7);
@@ -167,7 +167,7 @@ test('uses a child public property before an inherited attribute', function (): 
     $job = new HandleMessageJob($message, 'child-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture($handler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply($handler::class, $message, $job);
 
     // --- Assert ---
     expect($job->maxExceptions)->toBe(8);
@@ -179,7 +179,7 @@ test('uses an attribute declared by the handler trait before its default propert
     $job = new HandleMessageJob($message, 'trait-orders');
 
     // --- Act ---
-    (new HandlerQueuePolicy)->capture(RecordingMessageHandler::class, $message, $job);
+    (new HandlerQueuePolicy)->apply(RecordingMessageHandler::class, $message, $job);
 
     // --- Assert ---
     expect($job->timeout)->toBe(75);
