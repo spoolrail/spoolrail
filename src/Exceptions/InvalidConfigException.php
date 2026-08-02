@@ -42,4 +42,11 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
     {
         return new self("RabbitMQ connection [$connectionName] setting [$setting] $requirement.");
     }
+
+    public static function deduplicationStore(?string $store): self
+    {
+        $name = $store ?? 'default';
+
+        return new self("Spoolrail deduplication requires a cache store that supports atomic locks, and the [$name] cache store does not. Configure [spoolrail.deduplication.store] with a lock-capable store or disable [spoolrail.deduplication.enabled].");
+    }
 }
