@@ -12,6 +12,6 @@ class MessageTooLargeException extends LengthException implements SpoolrailExcep
         public readonly int $bytes,
         public readonly int $limit,
     ) {
-        parent::__construct("Serialized message envelope is $bytes bytes; Spoolrail accepts at most $limit bytes.");
+        parent::__construct("Serialized message publication is $bytes bytes; Spoolrail accepts at most $limit bytes.");
     }
 }

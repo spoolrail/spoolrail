@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Drivers;
 
+use Carbon\CarbonImmutable;
 use Closure;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Message\AMQPMessage;
+use PhpAmqpLib\Wire\AMQPTable;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
@@ -20,6 +22,7 @@ use Spoolrail\Spoolrail\RabbitMq\Connector;
 use Spoolrail\Spoolrail\RabbitMq\ResourceName;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
+use Spoolrail\Spoolrail\TransportContext;
 use Throwable;
 
 class RabbitMqDriver implements CanClose, CanManageTopology, Driver
@@ -42,17 +45,20 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
         $this->close();
     }
 
-    public function publish(string $topic, string $body): void
+    /**
+     * @param  array<string, string>  $headers
+     */
+    public function publish(string $topic, string $body, array $headers): void
     {
         ResourceName::topic($topic);
 
         try {
             $this->discardIdlePublisherConnection();
             $channel = $this->publisherChannel();
-            $message = new AMQPMessage($body, [
-                'content_type' => 'application/json',
-                'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
-            ]);
+            $message = new AMQPMessage(
+                $body,
+                $this->messageProperties($body, $headers),
+            );
         } catch (SpoolrailException $exception) {
             $this->discardConnection();
 
@@ -86,7 +92,7 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
     }
 
     /**
-     * @param  Closure(string): void  $handoff
+     * @param  Closure(string, TransportContext): void  $handoff
      *
      * @throws Throwable
      */
@@ -105,8 +111,8 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
                 false,
                 false,
                 false,
-                function (AMQPMessage $delivery) use ($handoff): void {
-                    $this->handoff($handoff, $delivery->getBody());
+                function (AMQPMessage $delivery) use ($handoff, $subscription): void {
+                    $this->handoff($handoff, $delivery, $subscription);
                     $this->acknowledge($delivery);
                 },
             );
@@ -183,12 +189,25 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
     }
 
     /**
-     * @param  Closure(string): void  $handoff
+     * @param  Closure(string, TransportContext): void  $handoff
      */
-    private function handoff(Closure $handoff, string $body): void
-    {
+    private function handoff(
+        Closure $handoff,
+        AMQPMessage $delivery,
+        string $subscription,
+    ): void {
         try {
-            $handoff($body);
+            $handoff(
+                $delivery->getBody(),
+                new TransportContext(
+                    driver: 'rabbitmq',
+                    connectionName: $this->config->connectionName,
+                    topic: (string) $delivery->getExchange(),
+                    subscription: $subscription,
+                    headers: $this->headers($delivery),
+                    redelivered: $delivery->isRedelivered(),
+                ),
+            );
         } catch (Throwable $exception) {
             $this->handoffFailure = $exception;
 
@@ -203,6 +222,56 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
         } catch (Throwable $exception) {
             throw ConsumptionException::settlementFailed($exception);
         }
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     * @return array<string, mixed>
+     */
+    private function messageProperties(string $body, array $headers): array
+    {
+        /** @var array{id: string, type: string, published_at: string} $envelope */
+        $envelope = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
+
+        $properties = [
+            'content_type' => 'application/json',
+            'delivery_mode' => AMQPMessage::DELIVERY_MODE_PERSISTENT,
+            'message_id' => $envelope['id'],
+            'type' => $envelope['type'],
+            'timestamp' => CarbonImmutable::parse($envelope['published_at'])->getTimestamp(),
+        ];
+
+        if ($headers !== []) {
+            $properties['application_headers'] = new AMQPTable($headers);
+        }
+
+        return $properties;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function headers(AMQPMessage $delivery): array
+    {
+        if (! $delivery->has('application_headers')) {
+            return [];
+        }
+
+        $headers = $delivery->get('application_headers');
+
+        if (! $headers instanceof AMQPTable) {
+            return [];
+        }
+
+        $nativeHeaders = [];
+
+        foreach ($headers->getNativeData() as $key => $value) {
+            if (is_string($key)) {
+                $nativeHeaders[$key] = $value;
+            }
+        }
+
+        return $nativeHeaders;
     }
 
     private function discardIdlePublisherConnection(): void

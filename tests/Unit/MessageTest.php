@@ -18,6 +18,7 @@ test('creates an unpublished UUIDv7 message with a caller-defined payload', func
     expect($message->type)->toBe($type);
     expect($message->payload)->toBe($payload);
     expect($message->publishedAt)->toBeNull();
+    expect($message->transport)->toBeNull();
 });
 
 test('rejects empty and whitespace-only message types', function (string $type): void {
@@ -26,4 +27,21 @@ test('rejects empty and whitespace-only message types', function (string $type):
 })->with([
     'empty' => '',
     'whitespace' => " \t\n",
+]);
+
+test('accepts a message type at the portable byte limit', function (): void {
+    $message = Message::make(str_repeat('a', 255), []);
+
+    expect(strlen($message->type))->toBe(255);
+});
+
+test('rejects message types that cannot cross the portable boundary', function (string $type): void {
+    expect(fn (): Message => Message::make($type, []))
+        ->toThrow(
+            InvalidArgumentException::class,
+            'The message type must be a non-empty valid UTF-8 string of at most 255 bytes.',
+        );
+})->with([
+    'invalid UTF-8' => "\xFF",
+    'over 255 UTF-8 bytes' => str_repeat('é', 128),
 ]);

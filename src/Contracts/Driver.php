@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Contracts;
 
 use Closure;
+use Spoolrail\Spoolrail\TransportContext;
 
 interface Driver
 {
-    public function publish(string $topic, string $body): void;
+    /**
+     * @param  array<string, string>  $headers
+     */
+    public function publish(string $topic, string $body, array $headers): void;
 
     /**
      * The driver retains its native receipt while invoking the handoff with the serialized body.
@@ -16,7 +20,7 @@ interface Driver
      * A handoff exception must leave it unsettled, stop consumption, and propagate unchanged.
      * A settlement failure must also stop consumption and report that the handoff may be repeated.
      *
-     * @param  Closure(string): void  $handoff
+     * @param  Closure(string, TransportContext): void  $handoff
      */
     public function consume(string $subscription, Closure $handoff): void;
 }

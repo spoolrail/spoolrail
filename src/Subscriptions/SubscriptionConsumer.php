@@ -14,6 +14,7 @@ use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\Jobs\SuppressDuplicateMessageHandling;
 use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
+use Spoolrail\Spoolrail\TransportContext;
 
 readonly class SubscriptionConsumer
 {
@@ -40,15 +41,19 @@ readonly class SubscriptionConsumer
 
         $connection->consume(
             $subscription->name(),
-            function (string $body) use ($subscription, $queue): void {
-                $this->handoff($body, $subscription, $queue);
+            function (string $body, TransportContext $transport) use ($subscription, $queue): void {
+                $this->handoff($body, $transport, $subscription, $queue);
             },
         );
     }
 
-    private function handoff(string $body, Subscription $subscription, Queue $queue): void
-    {
-        $message = $this->envelope->decode($body);
+    private function handoff(
+        string $body,
+        TransportContext $transport,
+        Subscription $subscription,
+        Queue $queue,
+    ): void {
+        $message = $this->envelope->decode($body)->withTransport($transport);
         $job = new HandleMessageJob($message, $subscription->name());
 
         $this->handlerQueuePolicy->apply($subscription->handlerClass(), $message, $job);

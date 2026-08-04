@@ -76,7 +76,7 @@ class MessageEnvelope
     {
         $type = $envelope['type'] ?? null;
 
-        if (is_string($type) && trim($type) !== '') {
+        if (is_string($type) && Message::isValidType($type)) {
             return $type;
         }
 

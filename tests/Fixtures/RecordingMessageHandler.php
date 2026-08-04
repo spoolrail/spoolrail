@@ -18,6 +18,9 @@ class RecordingMessageHandler implements MessageHandler
     /** @var list<Message> */
     public static array $messages = [];
 
+    /** @var list<Message> */
+    public static array $attemptedMessages = [];
+
     public static int $attempts = 0;
 
     public static int $constructions = 0;
@@ -38,6 +41,7 @@ class RecordingMessageHandler implements MessageHandler
     public function handle(Message $message): void
     {
         self::$attempts++;
+        self::$attemptedMessages[] = $message;
 
         if (self::$handlerFailuresRemaining > 0) {
             self::$handlerFailuresRemaining--;
@@ -70,6 +74,7 @@ class RecordingMessageHandler implements MessageHandler
     public static function reset(): void
     {
         self::$messages = [];
+        self::$attemptedMessages = [];
         self::$attempts = 0;
         self::$constructions = 0;
         self::$handlerFailuresRemaining = 0;
