@@ -69,7 +69,7 @@ class Subscription
 
     public function drainMessagesQueuedFor(string $formerName): self
     {
-        if (! LogicalName::isValid($formerName)) {
+        if (! LogicalName::isValidSubscription($formerName)) {
             throw InvalidSubscriptionException::invalidName($formerName);
         }
 

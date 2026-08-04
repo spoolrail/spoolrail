@@ -26,11 +26,11 @@ class SubscriptionRegistry
      */
     public function subscribe(string $topic, string $name, string $handler): Subscription
     {
-        if (! LogicalName::isValid($topic)) {
+        if (! LogicalName::isValidTopic($topic)) {
             throw InvalidSubscriptionException::invalidTopic($topic);
         }
 
-        if (! LogicalName::isValid($name)) {
+        if (! LogicalName::isValidSubscription($name)) {
             throw InvalidSubscriptionException::invalidName($name);
         }
 

@@ -41,7 +41,7 @@ class DeleteUndeclaredSubscriptionsCommand extends Command
         $connectionName = $connectionOption ?? $manager->defaultConnectionName();
         $targetPrefix = $retiredPrefix === null
             ? $prefix->current()
-            : $prefix->validate($retiredPrefix);
+            : $prefix->validateFormer($retiredPrefix);
 
         $this->components->info("Inspecting connection [$connectionName] with ownership prefix [$targetPrefix].");
         $this->warnAboutUninspectedConnections($connectionOption, $connectionName, $manager);

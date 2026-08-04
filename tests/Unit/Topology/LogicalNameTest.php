@@ -5,7 +5,8 @@ declare(strict_types=1);
 use Spoolrail\Spoolrail\Topology\LogicalName;
 
 test('accepts the portable logical-name grammar', function (string $name): void {
-    expect(LogicalName::isValid($name))->toBeTrue();
+    expect(LogicalName::isValidTopic($name))->toBeTrue()
+        ->and(LogicalName::isValidSubscription($name))->toBeTrue();
 })->with([
     'three-character boundary' => 'Ab3',
     'hyphen and underscore' => 'A-_',
@@ -13,7 +14,8 @@ test('accepts the portable logical-name grammar', function (string $name): void 
 ]);
 
 test('rejects values outside the portable logical-name grammar', function (string $name): void {
-    expect(LogicalName::isValid($name))->toBeFalse();
+    expect(LogicalName::isValidTopic($name))->toBeFalse()
+        ->and(LogicalName::isValidSubscription($name))->toBeFalse();
 })->with([
     'blank' => '   ',
     'short' => 'ab',
@@ -25,3 +27,21 @@ test('rejects values outside the portable logical-name grammar', function (strin
     'trailing whitespace' => 'orders ',
     'trailing newline' => "orders\n",
 ]);
+
+test('applies the portable length budget for each logical-name role', function (): void {
+    $topicAtLimit = 't'.str_repeat('o', 250);
+    $subscriptionAtLimit = 's'.str_repeat('u', 49);
+    $prefixAtLimit = 'p'.str_repeat('r', 23);
+
+    expect(LogicalName::isValidTopic($topicAtLimit))->toBeTrue()
+        ->and(LogicalName::isValidTopic("{$topicAtLimit}o"))->toBeFalse()
+        ->and(LogicalName::isValidSubscription($subscriptionAtLimit))->toBeTrue()
+        ->and(LogicalName::isValidSubscription("{$subscriptionAtLimit}u"))->toBeFalse()
+        ->and(strlen("$topicAtLimit.fifo"))->toBe(256)
+        ->and(strlen("$prefixAtLimit-$subscriptionAtLimit.fifo"))->toBe(80);
+});
+
+test('reserves transport-specific topic beginnings without restricting subscription names', function (): void {
+    expect(LogicalName::isValidTopic('GoOg-orders'))->toBeFalse()
+        ->and(LogicalName::isValidSubscription('GoOg-orders'))->toBeTrue();
+});
