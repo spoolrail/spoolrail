@@ -146,19 +146,35 @@ test('accepts an envelope at the shared size limit and rejects the next byte', f
         });
 });
 
-test('rejects a non-portable topic before raw publication', function (): void {
+test('accepts a topic at the portable limit and rejects the next character before raw publication', function (): void {
     // --- Arrange ---
+    $topicAtLimit = 't'.str_repeat('o', 250);
+    $topicOverLimit = "{$topicAtLimit}o";
     $driver = Mockery::mock(Driver::class);
-    $driver->allows('publish');
+    $driver->expects('publish')->once()->with($topicAtLimit, Mockery::type('string'));
     $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---
-    $action = fn (): Message => $connection->publish(
-        'orders.created',
+    $connection->publish($topicAtLimit, Message::make('order.created', []));
+    $rejectOverLimit = fn (): Message => $connection->publish(
+        $topicOverLimit,
         Message::make('order.created', []),
     );
 
     // --- Assert ---
-    expect($action)->toThrow(InvalidArgumentException::class);
-    $driver->shouldNotHaveReceived('publish');
+    expect($rejectOverLimit)->toThrow(
+        InvalidArgumentException::class,
+        "Topic [$topicOverLimit] must contain between 3 and 251 ASCII characters",
+    );
+});
+
+test('rejects a non-portable subscription before raw consumption', function (): void {
+    $driver = Mockery::mock(Driver::class);
+    $driver->shouldNotReceive('consume');
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    expect(fn () => $connection->consume(
+        's'.str_repeat('u', 50),
+        static function (): void {},
+    ))->toThrow(InvalidArgumentException::class);
 });

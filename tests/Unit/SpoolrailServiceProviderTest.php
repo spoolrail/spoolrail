@@ -41,8 +41,10 @@ test('loads the built-in RabbitMQ connection template', function (): void {
     expect($connection['management']['ca_file'])->toBeNull();
 });
 
-test('loads application subscription routes when booted without resolving a broker connection', function (): void {
+test('loads application subscription routes without deriving an ownership prefix or resolving a broker connection', function (): void {
     // --- Arrange ---
+    config()->set('spoolrail.prefix');
+
     $bootstrapPath = app()->bootstrapPath();
     app()
         ->setBasePath(__DIR__.'/../Fixtures/application')
@@ -60,5 +62,6 @@ test('loads application subscription routes when booted without resolving a brok
     $subscription = app(SubscriptionRegistry::class)->findOrFail('route-loaded-orders');
 
     // --- Assert ---
+    expect(config('spoolrail.prefix'))->toBeNull();
     expect($subscription->topic())->toBe('orders');
 });

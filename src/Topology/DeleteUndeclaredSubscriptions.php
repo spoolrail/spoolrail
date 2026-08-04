@@ -23,10 +23,10 @@ readonly class DeleteUndeclaredSubscriptions
      */
     public function __invoke(string $connectionName, ?string $retiredPrefix): array
     {
-        $targetPrefix = $this->targetPrefix($retiredPrefix);
-
         $topology = $this->manager->connection($connectionName)->topology()
             ?? throw new LogicException("Spoolrail connection [$connectionName] does not provide package-managed topology.");
+
+        $targetPrefix = $this->targetPrefix($retiredPrefix);
 
         $undeclaredResourceNames = $topology->undeclaredSubscriptionResourceNames(
             $retiredPrefix === null ? $this->declaredSubscriptions($connectionName) : [],
@@ -48,7 +48,7 @@ readonly class DeleteUndeclaredSubscriptions
             return $currentPrefix;
         }
 
-        $targetPrefix = $this->prefix->validate($retiredPrefix);
+        $targetPrefix = $this->prefix->validateFormer($retiredPrefix);
 
         if ($targetPrefix === $currentPrefix) {
             throw new InvalidArgumentException(

@@ -22,14 +22,14 @@ class InvalidSubscriptionException extends InvalidArgumentException implements S
     public static function invalidTopic(string $topic): self
     {
         return new self(
-            "Subscription topic [$topic] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
+            "Subscription topic [$topic] must contain between 3 and 251 ASCII characters, begin with a letter, otherwise contain only letters, digits, hyphens, and underscores, and avoid transport-reserved beginnings.",
         );
     }
 
     public static function invalidName(string $name): self
     {
         return new self(
-            "Subscription name [$name] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
+            "Subscription name [$name] must contain between 3 and 50 ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
         );
     }
 

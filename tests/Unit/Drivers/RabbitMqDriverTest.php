@@ -14,6 +14,7 @@ use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Enums\ConsumptionFailure;
 use Spoolrail\Spoolrail\Enums\PublicationOutcome;
 use Spoolrail\Spoolrail\Exceptions\ConsumptionException;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
@@ -133,14 +134,14 @@ test('rejects an over-limit topic before opening a connection', function (): voi
         ->toThrow(LengthException::class);
 });
 
-test('rejects an over-limit queue before opening a connection', function (): void {
-    config()->set('spoolrail.prefix', 'a'.str_repeat('b', 249));
+test('requires an ownership prefix before opening a consumer connection', function (): void {
+    config()->set('spoolrail.prefix');
 
     $connector = Mockery::mock(Connector::class);
     $connector->shouldNotReceive('connect');
 
     expect(fn () => rabbitMqDriver($connector)->consume('orders', static function (): void {}))
-        ->toThrow(LengthException::class);
+        ->toThrow(InvalidConfigException::class);
 });
 
 test('turns a negative publisher confirmation into a publication rejection', function (): void {

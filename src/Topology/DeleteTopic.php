@@ -16,9 +16,9 @@ readonly class DeleteTopic
 
     public function __invoke(string $connectionName, string $topic): void
     {
-        if (! LogicalName::isValid($topic)) {
+        if (! LogicalName::isValidTopic($topic)) {
             throw new InvalidArgumentException(
-                "Topic [$topic] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
+                "Topic [$topic] must contain between 3 and 251 ASCII characters, begin with a letter, otherwise contain only letters, digits, hyphens, and underscores, and avoid transport-reserved beginnings.",
             );
         }
 

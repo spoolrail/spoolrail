@@ -28,6 +28,14 @@ test('rejects blank subscription settings', function (Closure $configure, string
     ],
     'queued subscription' => [
         fn (Subscription $subscription): Subscription => $subscription->drainMessagesQueuedFor('   '),
-        'Subscription name [   ] must contain at least three ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.',
+        'Subscription name [   ] must contain between 3 and 50 ASCII characters',
     ],
 ]);
+
+test('rejects a queued-message drain name beyond the portable subscription limit', function (): void {
+    $subscription = (new SubscriptionRegistry)
+        ->subscribe('orders', 'warehouse-orders-v2', RecordingMessageHandler::class);
+
+    expect(fn (): Subscription => $subscription->drainMessagesQueuedFor('s'.str_repeat('u', 50)))
+        ->toThrow(InvalidSubscriptionException::class);
+});

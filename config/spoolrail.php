@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Str;
-
 return [
 
     /*
@@ -25,15 +23,14 @@ return [
     |--------------------------------------------------------------------------
     |
     | This prefix namespaces receive-side resources owned by this application.
-    | Set it explicitly when resource names must remain stable across application
-    | or environment renames.
+    | Before consuming or managing subscriptions, choose up to 24 characters
+    | from the application's durable identity. It is recommended to keep this
+    | value independent of APP_NAME because changing it requires migrating
+    | subscriptions.
     |
     */
 
-    'prefix' => env(
-        'SPOOLRAIL_PREFIX',
-        Str::slug((string) env('APP_NAME', 'laravel')).'-'.Str::slug((string) env('APP_ENV', 'local')),
-    ),
+    'prefix' => env('SPOOLRAIL_PREFIX'),
 
     /*
     |--------------------------------------------------------------------------

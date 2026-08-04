@@ -33,9 +33,19 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
         return new self("Spoolrail driver [$driver] is not supported.");
     }
 
+    public static function missingOwnershipPrefix(): self
+    {
+        return new self('Spoolrail ownership prefix is required for receive-side operations. Set [SPOOLRAIL_PREFIX] to a stable application identifier.');
+    }
+
     public static function invalidOwnershipPrefix(): self
     {
-        return new self('Spoolrail ownership prefix must begin with an ASCII letter and contain only ASCII letters, digits, hyphens, and underscores.');
+        return new self('Spoolrail ownership prefix must contain at most 24 ASCII characters, begin with a letter, otherwise contain only letters, digits, hyphens, and underscores, and avoid transport-reserved beginnings.');
+    }
+
+    public static function invalidFormerOwnershipPrefix(): self
+    {
+        return new self('Former Spoolrail ownership prefix must begin with an ASCII letter and contain only ASCII letters, digits, hyphens, and underscores.');
     }
 
     public static function rabbitMqSetting(string $connectionName, string $setting, string $requirement): self
