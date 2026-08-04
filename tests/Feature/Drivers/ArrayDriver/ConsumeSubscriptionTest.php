@@ -158,6 +158,10 @@ test('leaves queued handler failures to Laravel Queue without redelivering the s
     // --- Assert ---
     expect($failedJobs)->toHaveCount(1);
     expect(RecordingMessageHandler::$attempts)->toBe(4);
+    expect(array_map(
+        static fn (Message $message): mixed => $message->transport,
+        RecordingMessageHandler::$attemptedMessages,
+    ))->each->toEqual(RecordingMessageHandler::$attemptedMessages[0]->transport);
     expect(DB::connection('testing')->table('jobs')->count())->toBe(0);
 });
 
@@ -183,7 +187,13 @@ test('redelivers a sync delivery after its handler fails during handoff', functi
     // --- Assert ---
     expect($failure?->getMessage())->toBe('Handler failed.');
     expect(RecordingMessageHandler::$attempts)->toBe(2);
-    expect(RecordingMessageHandler::$messages)->toEqual([$published]);
+    expect(RecordingMessageHandler::$messages[0]->id)->toBe($published->id);
+    expect(RecordingMessageHandler::$attemptedMessages[0]->id)->toBe($published->id);
+    expect(RecordingMessageHandler::$attemptedMessages[1]->id)->toBe($published->id);
+    expect(RecordingMessageHandler::$attemptedMessages[0]->transport)
+        ->not->toBe(RecordingMessageHandler::$attemptedMessages[1]->transport);
+    expect(RecordingMessageHandler::$attemptedMessages[0]->transport?->redelivered)->toBeFalse();
+    expect(RecordingMessageHandler::$attemptedMessages[1]->transport?->redelivered)->toBeTrue();
 });
 
 test('propagates a rejected database Queue handoff without logging or losing buffered deliveries', function (): void {

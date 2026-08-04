@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonImmutable;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AbstractConnection;
 use PhpAmqpLib\Exception\AMQPBasicCancelException;
@@ -9,6 +10,7 @@ use PhpAmqpLib\Exception\AMQPHeartbeatMissedException;
 use PhpAmqpLib\Exception\AMQPIOException;
 use PhpAmqpLib\Exception\AMQPTimeoutException;
 use PhpAmqpLib\Message\AMQPMessage;
+use PhpAmqpLib\Wire\AMQPTable;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Enums\ConsumptionFailure;
@@ -20,8 +22,14 @@ use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\Connector;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
+use Spoolrail\Spoolrail\TransportContext;
 
 test('publishes a persistent message and waits for its confirmation', function (): void {
+    $body = rabbitMqMessageBody('accepted');
+    $headers = [
+        'correlation-id' => 'A-42',
+        'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+    ];
     $channel = Mockery::mock(AMQPChannel::class);
     $native = Mockery::mock(AbstractConnection::class);
     $connector = Mockery::mock(Connector::class);
@@ -33,15 +41,19 @@ test('publishes a persistent message and waits for its confirmation', function (
     $channel->expects('set_nack_handler')->once();
     $channel->expects('basic_publish')
         ->once()
-        ->withArgs(fn (AMQPMessage $message, string $exchange): bool => $message->getBody() === '{"message":"accepted"}'
+        ->withArgs(fn (AMQPMessage $message, string $exchange): bool => $message->getBody() === $body
             && $message->get('content_type') === 'application/json'
             && $message->get('delivery_mode') === AMQPMessage::DELIVERY_MODE_PERSISTENT
+            && $message->get('message_id') === '01890a5d-ac96-774b-bcd0-48f622f3e798'
+            && $message->get('type') === 'order.created'
+            && $message->get('timestamp') === CarbonImmutable::parse('2026-07-15T14:23:08.417Z')->getTimestamp()
+            && $message->get('application_headers')->getNativeData() === $headers
             && $exchange === 'orders');
     $channel->expects('wait_for_pending_acks')->once()->with(17);
 
     $driver = rabbitMqDriver($connector, publisherConfirmTimeout: 17);
 
-    $driver->publish('orders', '{"message":"accepted"}');
+    $driver->publish('orders', $body, $headers);
     $driver->close();
 });
 
@@ -68,7 +80,7 @@ test('reports an unknown publication outcome when confirmation times out without
     $caught = null;
 
     try {
-        $driver->publish('orders', '{}');
+        $driver->publish('orders', rabbitMqMessageBody(), []);
     } catch (Throwable $exception) {
         $caught = $exception;
     }
@@ -94,7 +106,7 @@ test('reports that a publication was not sent when connecting fails without retr
     $caught = null;
 
     try {
-        $driver->publish('orders', '{}');
+        $driver->publish('orders', rabbitMqMessageBody(), []);
     } catch (Throwable $exception) {
         $caught = $exception;
     }
@@ -118,7 +130,7 @@ test('preserves a package-classified failure before publishing', function (): vo
     $caught = null;
 
     try {
-        $driver->publish('orders', '{}');
+        $driver->publish('orders', rabbitMqMessageBody(), []);
     } catch (Throwable $caught) {
     }
 
@@ -130,7 +142,11 @@ test('rejects an over-limit topic before opening a connection', function (): voi
     $connector = Mockery::mock(Connector::class);
     $connector->shouldNotReceive('connect');
 
-    expect(fn () => rabbitMqDriver($connector)->publish(str_repeat('a', 256), '{}'))
+    expect(fn () => rabbitMqDriver($connector)->publish(
+        str_repeat('a', 256),
+        rabbitMqMessageBody(),
+        [],
+    ))
         ->toThrow(LengthException::class);
 });
 
@@ -177,7 +193,7 @@ test('turns a negative publisher confirmation into a publication rejection', fun
     $caught = null;
 
     try {
-        $driver->publish('orders', '{}');
+        $driver->publish('orders', rabbitMqMessageBody(), []);
     } catch (Throwable $exception) {
         $caught = $exception;
     }
@@ -204,8 +220,8 @@ test('refreshes an idle publisher connection before publishing again', function 
     $secondNative->expects('close')->once();
 
     foreach ([
-        [$firstChannel, '{"message":"first"}'],
-        [$secondChannel, '{"message":"second"}'],
+        [$firstChannel, rabbitMqMessageBody('first')],
+        [$secondChannel, rabbitMqMessageBody('second')],
     ] as [$channel, $body]) {
         $channel->expects('confirm_select')->once();
         $channel->expects('set_nack_handler')->once();
@@ -217,9 +233,9 @@ test('refreshes an idle publisher connection before publishing again', function 
     }
 
     $driver = rabbitMqDriver($connector);
-    $driver->publish('orders', '{"message":"first"}');
+    $driver->publish('orders', rabbitMqMessageBody('first'), []);
 
-    $driver->publish('orders', '{"message":"second"}');
+    $driver->publish('orders', rabbitMqMessageBody('second'), []);
     $driver->close();
 });
 
@@ -250,9 +266,15 @@ test('acknowledges a delivery only after the handoff returns', function (): void
             expect($noAck)->toBeFalse();
             expect($exclusive)->toBeFalse();
 
-            $delivery = new AMQPMessage('message body');
+            $delivery = new AMQPMessage('message body', [
+                'application_headers' => new AMQPTable([
+                    'correlation-id' => 'A-42',
+                    'transport-added' => 7,
+                    'nested' => ['active' => true],
+                ]),
+            ]);
             $delivery->setChannel($channel);
-            $delivery->setDeliveryInfo(1, false, 'orders', '');
+            $delivery->setDeliveryInfo(1, true, 'orders', '');
             $callback($delivery);
 
             return true;
@@ -269,8 +291,20 @@ test('acknowledges a delivery only after the handoff returns', function (): void
 
     // --- Act ---
     try {
-        $driver->consume('order-imports', function (string $body) use (&$events): void {
+        $driver->consume('order-imports', function (string $body, TransportContext $transport) use (&$events): void {
             expect($body)->toBe('message body');
+            expect($transport->driver)->toBe('rabbitmq');
+            expect($transport->connectionName)->toBe('rabbitmq');
+            expect($transport->topic)->toBe('orders');
+            expect($transport->subscription)->toBe('order-imports');
+            expect($transport->headers)->toBe([
+                'correlation-id' => 'A-42',
+                'transport-added' => 7,
+                'nested' => ['active' => true],
+            ]);
+            expect($transport->transportMessageId)->toBeNull();
+            expect($transport->transportPublishedAt)->toBeNull();
+            expect($transport->redelivered)->toBeTrue();
             $events[] = 'handoff';
         });
     } catch (ConsumptionException) {
@@ -491,4 +525,14 @@ function rabbitMqDriver(
         Mockery::mock(CanManageTopology::class),
         app(OwnershipPrefix::class),
     );
+}
+
+function rabbitMqMessageBody(string $reference = 'A-42'): string
+{
+    return json_encode([
+        'id' => '01890a5d-ac96-774b-bcd0-48f622f3e798',
+        'type' => 'order.created',
+        'payload' => ['reference' => $reference],
+        'published_at' => '2026-07-15T14:23:08.417Z',
+    ], JSON_THROW_ON_ERROR);
 }

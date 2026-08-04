@@ -29,7 +29,9 @@ class InvalidMessageEnvelopeException extends UnexpectedValueException implement
 
     public static function invalidType(): self
     {
-        return new self('The message envelope must contain a non-empty type.');
+        return new self(
+            'The message envelope must contain a non-empty valid UTF-8 type of at most 255 bytes.',
+        );
     }
 
     public static function payloadMustBeArray(): self

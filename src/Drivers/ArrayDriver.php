@@ -8,11 +8,19 @@ use Closure;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Spoolrail\Spoolrail\TransportContext;
 use Throwable;
 
 class ArrayDriver implements Driver
 {
-    /** @var array<string, list<string>> */
+    /**
+     * @var array<string, list<array{
+     *     topic: string,
+     *     body: string,
+     *     headers: array<string, string>,
+     *     redelivered: bool
+     * }>>
+     */
     private array $deliveries = [];
 
     public function __construct(
@@ -21,32 +29,58 @@ class ArrayDriver implements Driver
         private readonly SubscriptionRegistry $subscriptions,
     ) {}
 
-    public function publish(string $topic, string $body): void
+    /**
+     * @param  array<string, string>  $headers
+     */
+    public function publish(string $topic, string $body, array $headers): void
     {
         foreach ($this->matchingSubscriptions($topic) as $subscription) {
-            $this->deliveries[$subscription->name()][] = $body;
+            $this->deliveries[$subscription->name()][] = [
+                'topic' => $topic,
+                'body' => $body,
+                'headers' => $headers,
+                'redelivered' => false,
+            ];
         }
     }
 
     /**
-     * @param  Closure(string): void  $handoff
+     * @param  Closure(string, TransportContext): void  $handoff
      *
      * @throws Throwable
      */
     public function consume(string $subscription, Closure $handoff): void
     {
-        while (($body = $this->reserveNextDelivery($subscription)) !== null) {
+        while (($delivery = $this->reserveNextDelivery($subscription)) !== null) {
             try {
-                $handoff($body);
+                $handoff(
+                    $delivery['body'],
+                    new TransportContext(
+                        driver: 'array',
+                        connectionName: $this->connectionName,
+                        topic: $delivery['topic'],
+                        subscription: $subscription,
+                        headers: $delivery['headers'],
+                        redelivered: $delivery['redelivered'],
+                    ),
+                );
             } catch (Throwable $exception) {
-                $this->release($subscription, $body);
+                $this->release($subscription, $delivery);
 
                 throw $exception;
             }
         }
     }
 
-    private function reserveNextDelivery(string $subscription): ?string
+    /**
+     * @return array{
+     *     topic: string,
+     *     body: string,
+     *     headers: array<string, string>,
+     *     redelivered: bool
+     * }|null
+     */
+    private function reserveNextDelivery(string $subscription): ?array
     {
         if (($this->deliveries[$subscription] ?? []) === []) {
             return null;
@@ -55,9 +89,19 @@ class ArrayDriver implements Driver
         return array_shift($this->deliveries[$subscription]);
     }
 
-    private function release(string $subscription, string $body): void
+    /**
+     * @param  array{
+     *     topic: string,
+     *     body: string,
+     *     headers: array<string, string>,
+     *     redelivered: bool
+     * }  $delivery
+     */
+    private function release(string $subscription, array $delivery): void
     {
-        array_unshift($this->deliveries[$subscription], $body);
+        $delivery['redelivered'] = true;
+
+        array_unshift($this->deliveries[$subscription], $delivery);
     }
 
     /**

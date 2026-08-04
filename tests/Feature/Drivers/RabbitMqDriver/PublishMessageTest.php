@@ -25,22 +25,43 @@ test('publishes through the next available RabbitMQ host to every subscription',
     Spoolrail::subscribe('orders', 'analytics', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
     $this->artisan('spoolrail:sync')->run();
+    $headers = [
+        str_repeat('a', 128) => str_repeat('é', 512),
+        'header-2' => 'value-2',
+        'header-3' => 'value-3',
+        'header-4' => 'value-4',
+        'header-5' => 'value-5',
+        'header-6' => 'value-6',
+        'header-7' => 'value-7',
+        'header-8' => 'value-8',
+        'header-9' => 'value-9',
+        'header-10' => 'value-10',
+    ];
 
     // --- Act ---
     $published = Spoolrail::connection('rabbitmq')->publish(
         'orders',
         Message::make('order.created', ['reference' => 'A-42']),
+        headers: $headers,
     );
 
     // --- Assert ---
     $envelope = new MessageEnvelope;
     $deliveries = [];
+    $properties = [];
     $prefix = app(OwnershipPrefix::class)->current();
 
     foreach (["$prefix-warehouse", "$prefix-analytics"] as $queue) {
-        $body = $this->drainRabbitMqDeliveries($queue, 1)[0]['payload'];
-        $deliveries[] = $envelope->decode($body);
+        $delivery = $this->drainRabbitMqDeliveries($queue, 1)[0];
+        $deliveries[] = $envelope->decode($delivery['payload']);
+        $properties[] = $delivery['properties'];
     }
 
     expect($deliveries)->toEqual([$published, $published]);
+    expect($properties)->each->toMatchArray([
+        'message_id' => $published->id,
+        'type' => $published->type,
+        'timestamp' => $published->publishedAt?->getTimestamp(),
+        'headers' => $headers,
+    ]);
 });

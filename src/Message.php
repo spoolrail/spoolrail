@@ -10,6 +10,8 @@ use Ramsey\Uuid\Uuid;
 
 readonly class Message
 {
+    private const int MAX_TYPE_BYTES = 255;
+
     /**
      * @param  array<array-key, mixed>  $payload
      */
@@ -18,6 +20,7 @@ readonly class Message
         public string $type,
         public array $payload,
         public ?CarbonImmutable $publishedAt,
+        public ?TransportContext $transport,
     ) {}
 
     /**
@@ -25,8 +28,10 @@ readonly class Message
      */
     public static function make(string $type, array $payload): self
     {
-        if (trim($type) === '') {
-            throw new InvalidArgumentException('The message type must not be empty.');
+        if (! self::isValidType($type)) {
+            throw new InvalidArgumentException(
+                'The message type must be a non-empty valid UTF-8 string of at most 255 bytes.',
+            );
         }
 
         return new self(
@@ -34,7 +39,18 @@ readonly class Message
             type: $type,
             payload: $payload,
             publishedAt: null,
+            transport: null,
         );
+    }
+
+    /**
+     * @internal
+     */
+    public static function isValidType(string $type): bool
+    {
+        return trim($type) !== ''
+            && preg_match('//u', $type) === 1
+            && strlen($type) <= self::MAX_TYPE_BYTES;
     }
 
     /**
@@ -53,6 +69,7 @@ readonly class Message
             type: $type,
             payload: $payload,
             publishedAt: $publishedAt,
+            transport: null,
         );
     }
 
@@ -66,6 +83,21 @@ readonly class Message
             type: $this->type,
             payload: $this->payload,
             publishedAt: $publishedAt->utc()->startOfMillisecond(),
+            transport: null,
+        );
+    }
+
+    /**
+     * @internal
+     */
+    public function withTransport(TransportContext $transport): self
+    {
+        return new self(
+            id: $this->id,
+            type: $this->type,
+            payload: $this->payload,
+            publishedAt: $this->publishedAt,
+            transport: $transport,
         );
     }
 }

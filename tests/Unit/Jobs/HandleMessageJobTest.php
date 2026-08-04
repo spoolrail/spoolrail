@@ -9,6 +9,7 @@ use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Spoolrail\Spoolrail\TransportContext;
 
 test('uses the handler currently registered for its subscription when executed', function (): void {
     // --- Arrange ---
@@ -50,6 +51,33 @@ test('fails when its subscription is no longer registered at execution', functio
 
     expect(fn () => $job->handle($subscriptions, app()))
         ->toThrow(InvalidSubscriptionException::class);
+});
+
+test('retains transport context when the universal job is serialized', function (): void {
+    // --- Arrange ---
+    $transport = new TransportContext(
+        driver: 'rabbitmq',
+        connectionName: 'rabbitmq',
+        topic: 'orders',
+        subscription: 'warehouse-orders',
+        headers: [
+            'correlation-id' => 'A-42',
+            'transport-added' => 7,
+        ],
+        redelivered: true,
+    );
+    $message = Message::make('order.created', ['reference' => 'A-42'])
+        ->withPublishedAt(CarbonImmutable::parse('2026-07-15 14:23:08.417 UTC'))
+        ->withTransport($transport);
+    $job = new HandleMessageJob($message, 'warehouse-orders');
+
+    // --- Act ---
+    $restored = unserialize(serialize($job));
+
+    // --- Assert ---
+    expect($restored)->toBeInstanceOf(HandleMessageJob::class);
+    expect($restored->message->transport)->toEqual($transport);
+    expect($restored->message->transport)->not->toBe($transport);
 });
 
 function createNamedMessageHandlerMock(string $name): MessageHandler&MockInterface

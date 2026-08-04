@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageEnvelope;
+use Spoolrail\Spoolrail\TransportContext;
 
 test('encodes the exact wire envelope', function (): void {
     // --- Arrange ---
@@ -17,6 +18,14 @@ test('encodes the exact wire envelope', function (): void {
         'metadata' => ['gift_message' => null],
         'paid' => false,
     ])->withPublishedAt(CarbonImmutable::parse('2026-07-15 14:23:08.417000 UTC'));
+    $message = $message->withTransport(new TransportContext(
+        driver: 'array',
+        connectionName: 'array',
+        topic: 'orders',
+        subscription: 'warehouse-orders',
+        headers: ['correlation-id' => 'A-42'],
+        redelivered: false,
+    ));
     $expected = json_encode([
         'id' => $message->id,
         'type' => 'order.created',
@@ -67,6 +76,7 @@ test('decodes only supported fields from a wire envelope', function (): void {
     ]);
     expect($message->publishedAt?->timezoneName)->toBe('UTC');
     expect($message->publishedAt?->format('Y-m-d\TH:i:s.v\Z'))->toBe('2026-07-15T14:23:08.417Z');
+    expect($message->transport)->toBeNull();
 });
 
 test('rejects JSON values that are not object envelopes', function (string $json): void {
@@ -121,11 +131,12 @@ test('rejects invalid message types', function (mixed $type): void {
     expect(fn (): Message => $envelope->decode($json))
         ->toThrow(
             InvalidMessageEnvelopeException::class,
-            'The message envelope must contain a non-empty type.',
+            'The message envelope must contain a non-empty valid UTF-8 type of at most 255 bytes.',
         );
 })->with([
     'whitespace string' => " \t\n",
     'number' => 42,
+    'over 255 UTF-8 bytes' => str_repeat('é', 128),
 ]);
 
 test('rejects payloads that are not arrays', function (): void {
