@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Tests\Fixtures;
 
 use Closure;
+use Override;
 use Spoolrail\Spoolrail\Message;
 
 class LongRunningMessageHandler extends RecordingMessageHandler
@@ -13,6 +14,7 @@ class LongRunningMessageHandler extends RecordingMessageHandler
 
     public int $timeout = 120;
 
+    #[Override]
     public function handle(Message $message): void
     {
         parent::handle($message);
@@ -26,6 +28,7 @@ class LongRunningMessageHandler extends RecordingMessageHandler
     }
 
     /** @return list<never> */
+    #[Override]
     public function middleware(Message $message): array
     {
         return [];
