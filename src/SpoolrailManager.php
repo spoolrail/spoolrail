@@ -117,18 +117,61 @@ class SpoolrailManager
     {
         $connectionConfig = $this->connectionConfig($connectionName);
         $driverName = $this->driverName($connectionName, $connectionConfig);
+        $creator = $this->customCreators[$driverName] ?? null;
 
-        if (isset($this->customCreators[$driverName])) {
-            $driver = $this->customCreators[$driverName]($this->app, $connectionConfig, $connectionName);
-        } else {
-            $driver = match ($driverName) {
-                'array' => $this->createArrayDriver($connectionName),
-                'rabbitmq' => $this->createRabbitMqDriver($connectionName, $connectionConfig),
-                default => throw InvalidConfigException::unsupportedDriver($driverName),
-            };
+        if (! $creator instanceof Closure && ! in_array($driverName, ['array', 'rabbitmq'], true)) {
+            throw InvalidConfigException::unsupportedDriver($driverName);
         }
 
-        return new Connection($driver, $this->envelope);
+        $resolveDriver = fn (): Driver => $this->createDriver(
+            $connectionName,
+            $connectionConfig,
+            $driverName,
+            $creator,
+        );
+
+        return new Connection(
+            driver: $this->outboxEnabled() ? $resolveDriver : $resolveDriver(),
+            envelope: $this->envelope,
+            connectionName: $connectionName,
+        );
+    }
+
+    private function outboxEnabled(): bool
+    {
+        return $this->config->get('spoolrail.outbox.enabled', false) === true;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $connectionConfig
+     * @param  (Closure(Application, array<array-key, mixed>, string): Driver)|null  $creator
+     */
+    private function createDriver(
+        string $connectionName,
+        array $connectionConfig,
+        string $driverName,
+        ?Closure $creator,
+    ): Driver {
+        if ($creator instanceof Closure) {
+            return $creator($this->app, $connectionConfig, $connectionName);
+        }
+
+        return $this->createBuiltInDriver($connectionName, $connectionConfig, $driverName);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $connectionConfig
+     */
+    private function createBuiltInDriver(
+        string $connectionName,
+        array $connectionConfig,
+        string $driverName,
+    ): Driver {
+        return match ($driverName) {
+            'array' => $this->createArrayDriver($connectionName),
+            'rabbitmq' => $this->createRabbitMqDriver($connectionName, $connectionConfig),
+            default => throw InvalidConfigException::unsupportedDriver($driverName),
+        };
     }
 
     /**

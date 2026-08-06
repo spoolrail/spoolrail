@@ -12,21 +12,31 @@ use Ramsey\Uuid\Rfc4122\FieldsInterface;
 use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 
-/**
- * @internal
- */
 class MessageEnvelope
 {
     private const string TIMESTAMP_FORMAT = 'Y-m-d\TH:i:s.v\Z';
 
     public function encode(Message $message): string
     {
-        return json_encode([
+        return json_encode($this->toArray($message), JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * @return array{
+     *     id: string,
+     *     type: string,
+     *     payload: array<array-key, mixed>,
+     *     published_at: string|null
+     * }
+     */
+    public function toArray(Message $message): array
+    {
+        return [
             'id' => $message->id,
             'type' => $message->type,
             'payload' => $message->payload,
             'published_at' => $message->publishedAt?->format(self::TIMESTAMP_FORMAT),
-        ], JSON_THROW_ON_ERROR);
+        ];
     }
 
     public function decode(string $json): Message
@@ -41,6 +51,14 @@ class MessageEnvelope
             throw InvalidMessageEnvelopeException::mustBeObject();
         }
 
+        return $this->fromArray($envelope);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $envelope
+     */
+    public function fromArray(array $envelope): Message
+    {
         return Message::fromEnvelope(
             $this->id($envelope),
             $this->type($envelope),

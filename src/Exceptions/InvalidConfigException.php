@@ -59,4 +59,14 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
 
         return new self("Spoolrail deduplication requires a cache store that supports atomic locks, and the [$name] cache store does not. Configure [spoolrail.deduplication.store] with a lock-capable store or disable [spoolrail.deduplication.enabled].");
     }
+
+    public static function invalidOutboxConnection(): self
+    {
+        return new self('Spoolrail outbox connection must be null or a non-empty Laravel database connection name.');
+    }
+
+    public static function invalidOutboxExceptionCooldown(): self
+    {
+        return new self('Spoolrail outbox exception cooldown must be a positive integer.');
+    }
 }

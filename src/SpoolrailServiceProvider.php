@@ -9,6 +9,7 @@ use Override;
 use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
 use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
+use Spoolrail\Spoolrail\Console\Outbox\PublishCommand;
 use Spoolrail\Spoolrail\Console\SyncCommand;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
@@ -31,11 +32,16 @@ class SpoolrailServiceProvider extends ServiceProvider
             __DIR__.'/../config/spoolrail.php' => config_path('spoolrail.php'),
         ], 'spoolrail-config');
 
+        $this->publishesMigrations([
+            __DIR__.'/../database/migrations/0001_01_01_000000_create_outbox_publications_table.php' => database_path('migrations/0001_01_01_000000_create_outbox_publications_table.php'),
+        ], 'spoolrail-migrations');
+
         if ($this->app->runningInConsole()) {
             $this->commands([
                 ConsumeCommand::class,
                 DeleteTopicCommand::class,
                 DeleteUndeclaredSubscriptionsCommand::class,
+                PublishCommand::class,
                 SyncCommand::class,
             ]);
         }
