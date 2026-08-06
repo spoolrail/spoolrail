@@ -75,6 +75,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Transactional Outbox
+    |--------------------------------------------------------------------------
+    |
+    | Enable the outbox when publications must commit atomically with database
+    | changes. The connection defaults to Laravel's default database connection.
+    | Failed publication reports for the same row are throttled for the number
+    | of seconds configured below.
+    |
+    */
+
+    'outbox' => [
+        'enabled' => env('SPOOLRAIL_OUTBOX', false),
+        'connection' => env('SPOOLRAIL_OUTBOX_CONNECTION', null),
+        'exception_cooldown' => 300,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Message Deduplication
     |--------------------------------------------------------------------------
     |

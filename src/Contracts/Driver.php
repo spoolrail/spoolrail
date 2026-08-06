@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Contracts;
 
 use Closure;
+use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\TransportContext;
 
 interface Driver
 {
     /**
      * @param  array<string, string>  $headers
+     *
+     * @throws PublicationException
      */
     public function publish(string $topic, string $body, array $headers): void;
 

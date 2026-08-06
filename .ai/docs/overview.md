@@ -8,6 +8,8 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 **Keep publication ambiguity visible**: When broker acceptance cannot be proven, report an unknown outcome instead of retrying automatically. A successful broker publication confirms acceptance, not subscription delivery.
 
+**Keep committed outbox intent recoverable**: With the outbox enabled, a publication belongs to its configured database transaction until commit and remains package responsibility until broker acceptance. Failed or ambiguous attempts must retain that intent; acceptance followed by failure to delete may repeat it, but uncertainty must not be resolved by discarding it.
+
 **Keep topology explicit**: Subscription declarations are the sole topology source. Publishing and consumption never create or reconcile resources. Synchronization preflights every referenced managed connection before applying any plan, and deletion remains explicit.
 
 **Isolate receive-side ownership**: Package-owned subscription resources use an explicit, stable application prefix. Operations that address those resources require it; publishing does not. Changing it selects a different physical resource namespace.
@@ -21,6 +23,8 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 ## Architectural Boundaries
 
 **Publishing is subscription-independent**: Publishers do not declare or need to know subscriptions, and they do not create topology. Receiving applications must provision the required topic before publication begins.
+
+**Publication policy stays above drivers**: The connection boundary prepares the portable publication once, then either sends it directly or stores it durably. Outbox dispatch sends that stored envelope through the selected driver without restamping it, while drivers remain unaware of the outbox.
 
 **Consumption bridges to Laravel Queue**: A transport delivery becomes a Laravel Queue job; the queue worker invokes the handler later.
 

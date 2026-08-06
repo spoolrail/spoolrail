@@ -7,10 +7,12 @@ namespace Spoolrail\Spoolrail;
 use Carbon\CarbonImmutable;
 use Closure;
 use InvalidArgumentException;
+use LogicException;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
+use Spoolrail\Spoolrail\Outbox\OutboxPublication;
 use Spoolrail\Spoolrail\Topology\LogicalName;
 
 class Connection
@@ -25,10 +27,27 @@ class Connection
 
     private const int AWS_STRING_DATA_TYPE_BYTES = 6;
 
+    private ?Driver $resolvedDriver = null;
+
+    /**
+     * @var (Closure(): Driver)|null
+     */
+    private ?Closure $resolveDriver = null;
+
+    /**
+     * @param  Driver|(Closure(): Driver)  $driver
+     */
     public function __construct(
-        private readonly Driver $driver,
+        Driver|Closure $driver,
         private readonly MessageEnvelope $envelope,
-    ) {}
+        private readonly string $connectionName = 'default',
+    ) {
+        if ($driver instanceof Driver) {
+            $this->resolvedDriver = $driver;
+        } else {
+            $this->resolveDriver = $driver;
+        }
+    }
 
     /**
      * @param  array<string, string>  $headers
@@ -51,9 +70,29 @@ class Connection
             throw new MessageTooLargeException($publicationBytes, self::MAX_PUBLICATION_BYTES);
         }
 
-        $this->driver->publish($topic, $body, $headers);
+        if ($this->outboxEnabled()) {
+            OutboxPublication::query()->create([
+                'connection' => $this->connectionName,
+                'topic' => $topic,
+                'message' => $this->envelope->toArray($stampedMessage),
+                'headers' => $headers,
+                'last_error' => null,
+            ]);
+        } else {
+            $this->driver()->publish($topic, $body, $headers);
+        }
 
         return $stampedMessage;
+    }
+
+    /**
+     * @internal
+     *
+     * @param  array<string, string>  $headers
+     */
+    public function publishStored(string $topic, string $message, array $headers): void
+    {
+        $this->driver()->publish($topic, $message, $headers);
     }
 
     /**
@@ -67,7 +106,7 @@ class Connection
             );
         }
 
-        $this->driver->consume($subscription, $handoff);
+        $this->driver()->consume($subscription, $handoff);
     }
 
     /**
@@ -147,7 +186,9 @@ class Connection
      */
     public function topology(): ?CanManageTopology
     {
-        return $this->driver instanceof CanManageTopology ? $this->driver : null;
+        $driver = $this->driver();
+
+        return $driver instanceof CanManageTopology ? $driver : null;
     }
 
     /**
@@ -155,8 +196,26 @@ class Connection
      */
     public function close(): void
     {
-        if ($this->driver instanceof CanClose) {
-            $this->driver->close();
+        if ($this->resolvedDriver instanceof CanClose) {
+            $this->resolvedDriver->close();
         }
+    }
+
+    private function driver(): Driver
+    {
+        if ($this->resolvedDriver instanceof Driver) {
+            return $this->resolvedDriver;
+        }
+
+        if (! $this->resolveDriver instanceof Closure) {
+            throw new LogicException('The Spoolrail connection has no driver resolver.');
+        }
+
+        return $this->resolvedDriver = ($this->resolveDriver)();
+    }
+
+    private function outboxEnabled(): bool
+    {
+        return config('spoolrail.outbox.enabled', false) === true;
     }
 }

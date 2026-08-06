@@ -22,6 +22,34 @@ test('publishes the package config under the spoolrail config tag', function ():
     expect($paths[$source])->toBe(config_path('spoolrail.php'));
 });
 
+test('publishes the outbox migration under the spoolrail migrations tag', function (): void {
+    // --- Act ---
+    $paths = SpoolrailServiceProvider::pathsToPublish(
+        SpoolrailServiceProvider::class,
+        'spoolrail-migrations',
+    );
+
+    // --- Assert ---
+    expect($paths)->toHaveCount(1);
+
+    $source = array_key_first($paths);
+
+    expect(realpath($source))->toBe(realpath(
+        dirname(__DIR__, 2).'/database/migrations/0001_01_01_000000_create_outbox_publications_table.php',
+    ));
+    expect($paths[$source])->toBe(
+        database_path('migrations/0001_01_01_000000_create_outbox_publications_table.php'),
+    );
+});
+
+test('loads the direct publication policy and outbox defaults', function (): void {
+    expect(config('spoolrail.outbox'))->toBe([
+        'enabled' => false,
+        'connection' => null,
+        'exception_cooldown' => 300,
+    ]);
+});
+
 test('loads the built-in RabbitMQ connection template', function (): void {
     $connection = config('spoolrail.connections.rabbitmq');
 

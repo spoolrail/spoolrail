@@ -22,7 +22,7 @@ class PublicationException extends RuntimeException implements SpoolrailExceptio
     {
         return new self(
             PublicationOutcome::NotSent,
-            'The RabbitMQ publication failed before the message was sent.',
+            'The publication failed before the message was sent.',
             $previous,
         );
     }
@@ -31,7 +31,7 @@ class PublicationException extends RuntimeException implements SpoolrailExceptio
     {
         return new self(
             PublicationOutcome::Rejected,
-            'RabbitMQ rejected the publication.',
+            'The transport rejected the publication.',
         );
     }
 
@@ -39,7 +39,7 @@ class PublicationException extends RuntimeException implements SpoolrailExceptio
     {
         return new self(
             PublicationOutcome::Unknown,
-            'RabbitMQ did not confirm the publication; the message may have been accepted.',
+            'The transport did not confirm the publication; the message may have been accepted.',
             $previous,
         );
     }
