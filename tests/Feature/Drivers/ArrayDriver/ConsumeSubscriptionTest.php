@@ -52,6 +52,44 @@ test('uses the subscription Laravel Queue connection and queue overrides', funct
         ->toBe(['courier-broker']);
 });
 
+test('queues one job when the same message is delivered again', function (): void {
+    // --- Arrange ---
+    $this->createJobsTable();
+
+    Spoolrail::subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class)
+        ->onQueueConnection('database');
+
+    // Reusing the message preserves its UUID, as a broker redelivery does.
+    $message = Message::make('order.created', []);
+    Spoolrail::publish('orders', $message);
+    Spoolrail::publish('orders', $message);
+
+    // --- Act ---
+    $this->artisan('spoolrail:consume warehouse-order-processing')->run();
+
+    // --- Assert ---
+    expect(DB::connection('testing')->table('jobs')->count())->toBe(1);
+});
+
+test('queues the same message once for each subscription', function (): void {
+    // --- Arrange ---
+    $this->createJobsTable();
+
+    Spoolrail::subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class)
+        ->onQueueConnection('database');
+    Spoolrail::subscribe('orders', 'billing-order-processing', RecordingMessageHandler::class)
+        ->onQueueConnection('database');
+
+    Spoolrail::publish('orders', Message::make('order.created', []));
+
+    // --- Act ---
+    $this->artisan('spoolrail:consume warehouse-order-processing')->run();
+    $this->artisan('spoolrail:consume billing-order-processing')->run();
+
+    // --- Assert ---
+    expect(DB::connection('testing')->table('jobs')->count())->toBe(2);
+});
+
 test('rejects an open transaction on the database Queue connection without losing the delivery', function (string $transactionApi): void {
     // --- Arrange ---
     $this->createJobsTable();

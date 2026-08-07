@@ -53,11 +53,16 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
         return new self("RabbitMQ connection [$connectionName] setting [$setting] $requirement.");
     }
 
-    public static function deduplicationStore(?string $store): self
+    public static function unsupportedHandoffIdempotencyCacheStore(?string $store): self
     {
         $name = $store ?? 'default';
 
-        return new self("Spoolrail deduplication requires a cache store that supports atomic locks, and the [$name] cache store does not. Configure [spoolrail.deduplication.store] with a lock-capable store or disable [spoolrail.deduplication.enabled].");
+        return new self("Spoolrail Queue handoff idempotency requires a cache store backed by Laravel atomic locks, and the [$name] cache store is not supported. Configure [spoolrail.handoff_idempotency.cache_store] with a supported store.");
+    }
+
+    public static function invalidHandoffIdempotencyExpiry(): self
+    {
+        return new self('Spoolrail Queue handoff idempotency expiry must be a positive integer.');
     }
 
     public static function invalidOutboxConnection(): self

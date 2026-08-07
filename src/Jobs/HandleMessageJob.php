@@ -41,12 +41,4 @@ class HandleMessageJob
 
         $handler->handle($this->message);
     }
-
-    /**
-     * @return list<object>
-     */
-    public function middleware(): array
-    {
-        return [Container::getInstance()->make(SuppressDuplicateMessageHandling::class)];
-    }
 }
