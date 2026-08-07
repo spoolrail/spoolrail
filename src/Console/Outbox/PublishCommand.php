@@ -15,6 +15,11 @@ class PublishCommand extends Command
 
     public function handle(PublishOutbox $publishOutbox): int
     {
+        $this->trap(
+            fn (): array => [SIGINT, SIGTERM, SIGQUIT],
+            fn () => $publishOutbox->stop(),
+        );
+
         return $publishOutbox() ? self::SUCCESS : self::FAILURE;
     }
 }

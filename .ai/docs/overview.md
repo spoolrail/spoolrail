@@ -8,7 +8,7 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 **Keep publication ambiguity visible**: When broker acceptance cannot be proven, report an unknown outcome instead of retrying automatically. A successful broker publication confirms acceptance, not subscription delivery.
 
-**Keep committed outbox intent recoverable**: With the outbox enabled, a publication belongs to its configured database transaction until commit and remains package responsibility until broker acceptance. Failed or ambiguous attempts must retain that intent; acceptance followed by failure to delete may repeat it, but uncertainty must not be resolved by discarding it.
+**Keep committed outbox intent recoverable**: With the outbox enabled, a publication belongs to its configured database transaction until commit and remains package responsibility until successful dispatch removes its row. Failed or ambiguous attempts retain that intent; uncertainty must not be resolved by discarding it.
 
 **Keep topology explicit**: Subscription declarations are the sole topology source. Publishing and consumption never create or reconcile resources. Synchronization preflights every referenced managed connection before applying any plan, and deletion remains explicit.
 

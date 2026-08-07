@@ -49,6 +49,7 @@
         }
     },
     "suggest": {
+        "ext-pcntl": "Lets the outbox publisher finish its current publication before exiting on a termination signal.",
         "php-amqplib/php-amqplib": "Required to use the RabbitMQ driver (^3.7.4)."
     },
     "scripts": {

@@ -19,6 +19,8 @@ use Throwable;
 
 class PublishOutbox
 {
+    private bool $shouldStop = false;
+
     /**
      * @var array<string, Connection>
      */
@@ -43,12 +45,21 @@ class PublishOutbox
         return $this->publishThrough($highestId);
     }
 
+    public function stop(): void
+    {
+        $this->shouldStop = true;
+    }
+
     private function publishThrough(int $highestId): bool
     {
         [$fresh, $retries] = $this->partition(OutboxPublication::headsThrough($highestId));
         $failed = false;
 
         while (($head = $this->nextHead($fresh, $retries)) instanceof OutboxPublication) {
+            if ($this->shouldStop) {
+                break;
+            }
+
             $publication = OutboxPublication::query()->findOrFail($head->id);
 
             if (! $this->publish($publication)) {

@@ -13,6 +13,7 @@ use Spoolrail\Spoolrail\Exceptions\OutboxPublicationException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
+use Spoolrail\Spoolrail\Outbox\PublishOutbox;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithOutbox;
 
 uses(InteractsWithOutbox::class);
@@ -89,6 +90,86 @@ test('publishes committed rows and removes them after broker acceptance', functi
     ]);
     expect($creations)->toBe(1);
     expect(DB::table('outbox_publications')->count())->toBe(0);
+});
+
+test('finishes the current publication before stopping', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.connections.events', ['driver' => 'stoppable']);
+
+    $attempts = [];
+    $publishOutbox = app(PublishOutbox::class);
+    $driver = Mockery::mock(Driver::class);
+    $driver->allows('consume');
+    $driver->shouldReceive('publish')
+        ->andReturnUsing(function (string $topic, string $body) use (&$attempts, $publishOutbox): void {
+            $message = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
+            $attempts[] = [$topic, $message['payload']['sequence']];
+            $publishOutbox->stop();
+        });
+
+    Spoolrail::extend('stoppable', static fn (): Driver => $driver);
+
+    Spoolrail::connection('events')->publish(
+        'orders',
+        Message::make('order.created', ['sequence' => 'first']),
+    );
+    Spoolrail::connection('events')->publish(
+        'orders',
+        Message::make('order.created', ['sequence' => 'second']),
+    );
+
+    // --- Act ---
+    $succeeded = $publishOutbox();
+
+    // --- Assert ---
+    $pending = DB::table('outbox_publications')->orderBy('id')->get();
+
+    expect($succeeded)->toBeTrue();
+    expect($attempts)->toBe([['orders', 'first']]);
+    expect($pending)->toHaveCount(1);
+    expect(json_decode((string) $pending[0]->message, true, flags: JSON_THROW_ON_ERROR)['payload']['sequence'])
+        ->toBe('second');
+});
+
+test('records a failed current publication before stopping', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.connections.events', ['driver' => 'stoppable']);
+
+    $attempts = [];
+    $publishOutbox = app(PublishOutbox::class);
+    $driver = Mockery::mock(Driver::class);
+    $driver->allows('consume');
+    $driver->shouldReceive('publish')
+        ->andReturnUsing(function (string $topic, string $body) use (&$attempts, $publishOutbox): never {
+            $message = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
+            $attempts[] = [$topic, $message['payload']['sequence']];
+            $publishOutbox->stop();
+
+            throw PublicationException::notSent(new RuntimeException('Broker unavailable.'));
+        });
+
+    Spoolrail::extend('stoppable', static fn (): Driver => $driver);
+
+    Spoolrail::connection('events')->publish(
+        'orders',
+        Message::make('order.created', ['sequence' => 'failed']),
+    );
+    Spoolrail::connection('events')->publish(
+        'returns',
+        Message::make('return.created', ['sequence' => 'unattempted']),
+    );
+
+    // --- Act ---
+    $succeeded = $publishOutbox();
+
+    // --- Assert ---
+    $pending = DB::table('outbox_publications')->orderBy('id')->get();
+
+    expect($succeeded)->toBeFalse();
+    expect($attempts)->toBe([['orders', 'failed']]);
+    expect($pending)->toHaveCount(2);
+    expect($pending[0]->last_error)->toBe('The publication failed before the message was sent.');
+    expect($pending[1]->last_error)->toBeNull();
 });
 
 test('blocks a failed lane while publishing unrelated lanes and returns failure', function (): void {
