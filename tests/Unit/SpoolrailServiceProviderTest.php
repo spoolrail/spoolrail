@@ -45,7 +45,7 @@ test('publishes the outbox migration under the spoolrail migrations tag', functi
 test('loads the direct publication policy and outbox defaults', function (): void {
     expect(config('spoolrail.outbox'))->toBe([
         'enabled' => false,
-        'connection' => null,
+        'connection' => 'testing',
         'exception_cooldown' => 300,
     ]);
 });

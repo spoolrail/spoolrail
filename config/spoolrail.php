@@ -87,7 +87,7 @@ return [
 
     'outbox' => [
         'enabled' => env('SPOOLRAIL_OUTBOX', false),
-        'connection' => env('SPOOLRAIL_OUTBOX_CONNECTION', null),
+        'connection' => env('SPOOLRAIL_OUTBOX_CONNECTION', env('DB_CONNECTION', 'sqlite')),
         'exception_cooldown' => 300,
     ],
 

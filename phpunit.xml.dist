@@ -36,6 +36,7 @@
     </source>
     <php>
         <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="testing"/>
         <env name="SPOOLRAIL_CONNECTION" value="array"/>
         <env name="SPOOLRAIL_PREFIX" value="spoolrail-tests"/>
         <env name="RABBITMQ_USERNAME" value="spoolrail"/>
