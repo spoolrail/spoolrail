@@ -10,7 +10,7 @@ use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 
-readonly class Topology implements CanManageTopology
+class Topology implements CanManageTopology
 {
     public function __construct(
         private ConnectionConfig $config,

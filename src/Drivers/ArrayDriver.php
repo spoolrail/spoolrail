@@ -24,9 +24,9 @@ class ArrayDriver implements Driver
     private array $deliveries = [];
 
     public function __construct(
-        private readonly string $connectionName,
-        private readonly string $defaultConnectionName,
-        private readonly SubscriptionRegistry $subscriptions,
+        private string $connectionName,
+        private string $defaultConnectionName,
+        private SubscriptionRegistry $subscriptions,
     ) {}
 
     /**

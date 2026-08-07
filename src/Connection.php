@@ -39,8 +39,8 @@ class Connection
      */
     public function __construct(
         Driver|Closure $driver,
-        private readonly MessageEnvelope $envelope,
-        private readonly string $connectionName = 'default',
+        private MessageEnvelope $envelope,
+        private string $connectionName = 'default',
     ) {
         if ($driver instanceof Driver) {
             $this->resolvedDriver = $driver;

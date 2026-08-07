@@ -13,7 +13,7 @@ use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\TransportContext;
 
-readonly class SubscriptionConsumer
+class SubscriptionConsumer
 {
     public function __construct(
         private SpoolrailManager $manager,

@@ -25,7 +25,7 @@ class Subscription
         private readonly string $topic,
         private readonly string $name,
         private readonly string $handlerClass,
-        private readonly Closure $registerDrainTarget,
+        private Closure $registerDrainTarget,
     ) {}
 
     public function topic(): string

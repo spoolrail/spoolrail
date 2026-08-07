@@ -11,7 +11,7 @@ use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Throwable;
 
-readonly class SyncTopology
+class SyncTopology
 {
     public function __construct(
         private SpoolrailManager $manager,

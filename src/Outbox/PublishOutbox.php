@@ -25,11 +25,11 @@ class PublishOutbox
     private array $connections = [];
 
     public function __construct(
-        private readonly SpoolrailManager $spoolrail,
-        private readonly MessageEnvelope $envelope,
-        private readonly ExceptionHandler $exceptions,
-        private readonly RateLimiter $limiter,
-        private readonly Repository $config,
+        private SpoolrailManager $spoolrail,
+        private MessageEnvelope $envelope,
+        private ExceptionHandler $exceptions,
+        private RateLimiter $limiter,
+        private Repository $config,
     ) {}
 
     public function __invoke(): bool

@@ -8,7 +8,7 @@ use InvalidArgumentException;
 use LogicException;
 use Spoolrail\Spoolrail\SpoolrailManager;
 
-readonly class DeleteTopic
+class DeleteTopic
 {
     public function __construct(
         private SpoolrailManager $manager,

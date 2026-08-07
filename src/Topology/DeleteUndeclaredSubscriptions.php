@@ -10,7 +10,7 @@ use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
-readonly class DeleteUndeclaredSubscriptions
+class DeleteUndeclaredSubscriptions
 {
     public function __construct(
         private SpoolrailManager $manager,

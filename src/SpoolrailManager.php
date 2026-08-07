@@ -35,9 +35,9 @@ class SpoolrailManager
     private array $customCreators = [];
 
     public function __construct(
-        private readonly Application $app,
-        private readonly Repository $config,
-        private readonly MessageEnvelope $envelope,
+        private Application $app,
+        private Repository $config,
+        private MessageEnvelope $envelope,
     ) {}
 
     public function connection(?string $name = null): Connection

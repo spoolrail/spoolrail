@@ -34,10 +34,10 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
     private ?Throwable $handoffFailure = null;
 
     public function __construct(
-        private readonly ConnectionConfig $config,
-        private readonly Connector $connector,
-        private readonly CanManageTopology $topology,
-        private readonly OwnershipPrefix $ownershipPrefix,
+        private ConnectionConfig $config,
+        private Connector $connector,
+        private CanManageTopology $topology,
+        private OwnershipPrefix $ownershipPrefix,
     ) {}
 
     public function __destruct()

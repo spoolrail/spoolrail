@@ -17,8 +17,8 @@ class ManagementClient
     private ?ManagementConfig $managementConfig = null;
 
     public function __construct(
-        private readonly ConnectionConfig $config,
-        private readonly Factory $http,
+        private ConnectionConfig $config,
+        private Factory $http,
     ) {}
 
     /**

@@ -14,7 +14,7 @@ class OwnershipPrefix
     private const string PATTERN = '/\A[A-Za-z][A-Za-z0-9_-]*\z/';
 
     public function __construct(
-        private readonly Repository $config,
+        private Repository $config,
     ) {}
 
     public function current(): string

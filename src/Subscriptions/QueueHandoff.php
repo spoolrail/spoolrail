@@ -17,7 +17,7 @@ use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\Message;
 
-readonly class QueueHandoff
+class QueueHandoff
 {
     private const string COMPLETION_LOCK_OWNER = 'spoolrail:completed';
 
