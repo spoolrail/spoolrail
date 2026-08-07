@@ -5,11 +5,13 @@ declare(strict_types=1);
 use Illuminate\Database\QueryException;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\ManuallyFailedException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
+use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithDatabaseQueue;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
@@ -168,7 +170,7 @@ test('uses a database Queue while an unrelated database connection has an open t
         ->toBe(['default']);
 });
 
-test('leaves queued handler failures to Laravel Queue without redelivering the source delivery', function (): void {
+test('invokes the failure callback once after Laravel exhausts asynchronous attempts without redelivering the source', function (): void {
     // --- Arrange ---
     $this->createJobsTable();
     config()->set('queue.failed.driver', 'null');
@@ -196,6 +198,10 @@ test('leaves queued handler failures to Laravel Queue without redelivering the s
     // --- Assert ---
     expect($failedJobs)->toHaveCount(1);
     expect(RecordingMessageHandler::$attempts)->toBe(4);
+    expect(RecordingMessageHandler::$failedMessages)->toHaveCount(1);
+    expect(RecordingMessageHandler::$failedMessages[0]->id)
+        ->toBe(RecordingMessageHandler::$attemptedMessages[0]->id);
+    expect(RecordingMessageHandler::$failureCauses[0]?->getMessage())->toBe('Handler failed.');
     expect(array_map(
         static fn (Message $message): mixed => $message->transport,
         RecordingMessageHandler::$attemptedMessages,
@@ -203,28 +209,35 @@ test('leaves queued handler failures to Laravel Queue without redelivering the s
     expect(DB::connection('testing')->table('jobs')->count())->toBe(0);
 });
 
-test('redelivers a sync delivery after its handler fails during handoff', function (): void {
+test('redelivers a sync delivery and invokes the failure callback for each failed Queue job', function (): void {
     // --- Arrange ---
-    RecordingMessageHandler::$handlerFailuresRemaining = 1;
+    RecordingMessageHandler::$handlerFailuresRemaining = 2;
 
     Spoolrail::subscribe('orders', 'sync-failure', RecordingMessageHandler::class);
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $failure = null;
+    $failures = [];
 
-    try {
-        $this->artisan('spoolrail:consume sync-failure')->run();
-    } catch (Throwable $exception) {
-        $failure = $exception;
+    foreach (range(1, 2) as $_) {
+        try {
+            $this->artisan('spoolrail:consume sync-failure')->run();
+        } catch (Throwable $exception) {
+            $failures[] = $exception;
+        }
     }
 
     $this->artisan('spoolrail:consume sync-failure')->run();
     $this->artisan('spoolrail:consume sync-failure')->run();
 
     // --- Assert ---
-    expect($failure?->getMessage())->toBe('Handler failed.');
-    expect(RecordingMessageHandler::$attempts)->toBe(2);
+    expect($failures)->toHaveCount(2);
+    expect($failures[0]->getMessage())->toBe('Handler failed.');
+    expect($failures[1]->getMessage())->toBe('Handler failed.');
+    expect(RecordingMessageHandler::$attempts)->toBe(3);
+    expect(RecordingMessageHandler::$failedMessages)->toHaveCount(2);
+    expect(RecordingMessageHandler::$failedMessages[0]->id)->toBe($published->id);
+    expect(RecordingMessageHandler::$failedMessages[1]->id)->toBe($published->id);
     expect(RecordingMessageHandler::$messages[0]->id)->toBe($published->id);
     expect(RecordingMessageHandler::$attemptedMessages[0]->id)->toBe($published->id);
     expect(RecordingMessageHandler::$attemptedMessages[1]->id)->toBe($published->id);
@@ -232,6 +245,96 @@ test('redelivers a sync delivery after its handler fails during handoff', functi
         ->not->toBe(RecordingMessageHandler::$attemptedMessages[1]->transport);
     expect(RecordingMessageHandler::$attemptedMessages[0]->transport?->redelivered)->toBeFalse();
     expect(RecordingMessageHandler::$attemptedMessages[1]->transport?->redelivered)->toBeTrue();
+});
+
+test('passes a null cause to the handler when middleware fails a job without an exception', function (): void {
+    // --- Arrange ---
+    $this->createJobsTable();
+    config()->set('queue.failed.driver', 'null');
+
+    $failedJobs = [];
+    Event::listen(JobFailed::class, function (JobFailed $event) use (&$failedJobs): void {
+        $failedJobs[] = $event;
+    });
+
+    RecordingMessageHandler::$failWithoutException = true;
+
+    Spoolrail::subscribe('orders', 'manual-failure', RecordingMessageHandler::class)
+        ->onQueueConnection('database');
+    $published = Spoolrail::publish('orders', Message::make('order.created', []));
+
+    // --- Act ---
+    $this->artisan('spoolrail:consume manual-failure')->run();
+    $this->artisan('queue:work database --once --sleep=0')->run();
+
+    // --- Assert ---
+    expect(RecordingMessageHandler::$attempts)->toBe(0);
+    expect(RecordingMessageHandler::$failedMessages)->toHaveCount(1);
+    expect(RecordingMessageHandler::$failedMessages[0]->id)->toBe($published->id);
+    expect(RecordingMessageHandler::$failureCauses)->toBe([null]);
+    expect($failedJobs)->toHaveCount(1);
+    expect($failedJobs[0]->exception)->toBeInstanceOf(ManuallyFailedException::class);
+});
+
+test('preserves the original Laravel failure when the queued subscription no longer resolves', function (): void {
+    // --- Arrange ---
+    $this->createJobsTable();
+    config()->set('queue.failed.driver', 'null');
+
+    $failedJobs = [];
+    Event::listen(JobFailed::class, function (JobFailed $event) use (&$failedJobs): void {
+        $failedJobs[] = $event;
+    });
+
+    Spoolrail::subscribe('orders', 'removed-subscription', RecordingMessageHandler::class)
+        ->onQueueConnection('database');
+    Spoolrail::publish('orders', Message::make('order.created', []));
+    $this->artisan('spoolrail:consume removed-subscription')->run();
+
+    app()->instance(SubscriptionRegistry::class, new SubscriptionRegistry);
+
+    // --- Act ---
+    foreach (range(1, 4) as $_) {
+        $this->artisan('queue:work database --once --sleep=0')->run();
+    }
+
+    // --- Assert ---
+    expect($failedJobs)->toHaveCount(1);
+    expect($failedJobs[0]->exception)->toBeInstanceOf(InvalidSubscriptionException::class);
+    expect(RecordingMessageHandler::$failedMessages)->toBe([]);
+});
+
+test('propagates failure callback exceptions after Laravel reports the original failure', function (): void {
+    // --- Arrange ---
+    $failedJobs = [];
+    Event::listen(JobFailed::class, function (JobFailed $event) use (&$failedJobs): void {
+        $failedJobs[] = $event;
+    });
+
+    RecordingMessageHandler::$handlerFailuresRemaining = 1;
+    RecordingMessageHandler::$callbackFailure = new RuntimeException('Failure callback failed.');
+
+    Spoolrail::subscribe('orders', 'callback-failure', RecordingMessageHandler::class);
+    Spoolrail::publish('orders', Message::make('order.created', []));
+
+    // --- Act ---
+    $failure = null;
+
+    try {
+        $this->artisan('spoolrail:consume callback-failure')->run();
+    } catch (Throwable $exception) {
+        $failure = $exception;
+    }
+
+    RecordingMessageHandler::$callbackFailure = null;
+    $this->artisan('spoolrail:consume callback-failure')->run();
+
+    // --- Assert ---
+    expect($failure?->getMessage())->toBe('Failure callback failed.');
+    expect($failedJobs)->toHaveCount(1);
+    expect($failedJobs[0]->exception->getMessage())->toBe('Handler failed.');
+    expect(RecordingMessageHandler::$failedMessages)->toHaveCount(1);
+    expect(RecordingMessageHandler::$messages)->toHaveCount(1);
 });
 
 test('propagates a rejected database Queue handoff without logging or losing buffered deliveries', function (): void {
