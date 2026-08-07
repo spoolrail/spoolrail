@@ -50,6 +50,13 @@ test('loads the direct publication policy and outbox defaults', function (): voi
     ]);
 });
 
+test('loads the Queue handoff idempotency defaults', function (): void {
+    expect(config('spoolrail.handoff_idempotency'))->toBe([
+        'cache_store' => 'array',
+        'expiry' => 600,
+    ]);
+});
+
 test('loads the built-in RabbitMQ connection template', function (): void {
     $connection = config('spoolrail.connections.rabbitmq');
 

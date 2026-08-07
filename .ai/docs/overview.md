@@ -4,7 +4,7 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 ## Protected Outcomes
 
-**Prefer duplicate delivery to message loss**: Drivers settle a source delivery only after its handoff succeeds. Failure or concurrency ambiguity may repeat a message; bounded deduplication must never discard an uncertain attempt. Exactly-once side effects remain the handler's responsibility.
+**Prefer duplicate delivery to message loss**: Drivers settle a source delivery only after its handoff succeeds. Failure or concurrency ambiguity may repeat a message; handoff idempotency must never discard an uncertain attempt. Exactly-once side effects remain the handler's responsibility.
 
 **Keep publication ambiguity visible**: When broker acceptance cannot be proven, report an unknown outcome instead of retrying automatically. A successful broker publication confirms acceptance, not subscription delivery.
 

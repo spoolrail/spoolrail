@@ -93,24 +93,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Message Deduplication
+    | Queue Handoff Idempotency
     |--------------------------------------------------------------------------
     |
-    | Spoolrail hands each consumed message to Laravel Queue at least once,
-    | so a failure between the Queue handoff and the broker acknowledgement
-    | may queue the same message again. Spoolrail remembers handled messages
-    | in the cache store below for "remember" seconds and skips a remembered
-    | duplicate instead of handling it again. One handling attempt may hold
-    | the per-message lock for "lock" seconds, which should exceed the
-    | slowest handler run.
+    | If Spoolrail completes its Laravel Queue handoff but the broker
+    | acknowledgement is lost, the broker may retry the delivery. Spoolrail
+    | recognizes the recent handoff and does not add another job.
+    |
+    | It is recommended to use a "database" or "redis" store in production
+    | because they provide atomic lock release and automatically clean up
+    | expired locks. The default expiry covers ordinary recovery while
+    | keeping lock storage small, and should not normally be changed.
     |
     */
 
-    'deduplication' => [
-        'enabled' => env('SPOOLRAIL_DEDUPLICATION', true),
-        'store' => env('SPOOLRAIL_DEDUPLICATION_STORE', env('CACHE_STORE', 'database')),
-        'remember' => 86400,
-        'lock' => 300,
+    'handoff_idempotency' => [
+        'cache_store' => env('SPOOLRAIL_HANDOFF_IDEMPOTENCY_CACHE_STORE', env('CACHE_STORE', 'database')),
+        'expiry' => 600,
     ],
 
 ];

@@ -9,9 +9,6 @@ use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Queue\DatabaseQueue;
 use LogicException;
 use PDO;
-use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
-use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
-use Spoolrail\Spoolrail\Jobs\SuppressDuplicateMessageHandling;
 use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\TransportContext;
@@ -23,8 +20,7 @@ readonly class SubscriptionConsumer
         private SubscriptionRegistry $subscriptions,
         private MessageEnvelope $envelope,
         private QueueFactory $queues,
-        private HandlerQueuePolicy $handlerQueuePolicy,
-        private SuppressDuplicateMessageHandling $deduplication,
+        private QueueHandoff $queueHandoff,
     ) {}
 
     public function consume(string $subscriptionName): void
@@ -37,7 +33,7 @@ readonly class SubscriptionConsumer
         $queue = $this->queues->connection($subscription->queueConnectionName());
 
         $this->rejectTransactionalDatabaseQueue($queue);
-        $this->deduplication->ensureStoreSupportsLocks();
+        $this->queueHandoff->ensureConfigured();
 
         $connection->consume(
             $subscription->name(),
@@ -54,15 +50,8 @@ readonly class SubscriptionConsumer
         Queue $queue,
     ): void {
         $message = $this->envelope->decode($body)->withTransport($transport);
-        $job = new HandleMessageJob($message, $subscription->name());
 
-        $this->handlerQueuePolicy->apply($subscription->handlerClass(), $message, $job);
-
-        $queue->push(
-            $job,
-            '',
-            $subscription->queueName(),
-        );
+        $this->queueHandoff->push($subscription, $message, $queue);
     }
 
     private function rejectTransactionalDatabaseQueue(Queue $queue): void
