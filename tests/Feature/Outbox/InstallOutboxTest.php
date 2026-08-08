@@ -3,13 +3,12 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Schema;
-use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithOutbox;
-
-uses(InteractsWithOutbox::class);
 
 test('creates the published outbox storage contract', function (): void {
     // --- Act ---
-    $this->migrateOutbox();
+    $migration = require dirname(__DIR__, 3).'/database/migrations/0001_01_01_000000_create_outbox_publications_table.php';
+
+    $migration->up();
 
     // --- Assert ---
     expect(Schema::getColumnListing('outbox_publications'))->toBe([

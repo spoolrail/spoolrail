@@ -18,11 +18,6 @@ use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithOutbox;
 
 uses(InteractsWithOutbox::class);
 
-beforeEach(function (): void {
-    config()->set('spoolrail.outbox.enabled', true);
-    $this->migrateOutbox();
-});
-
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
 });
