@@ -19,14 +19,12 @@ beforeEach(function (): void {
 
 test('captures handler Queue policy and message-specific Laravel middleware without constructing the handler', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     Spoolrail::subscribe('orders', 'configured-orders', RecordingMessageHandler::class)
         ->onQueueConnection('database');
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $this->artisan('spoolrail:consume configured-orders')->run();
+    $this->artisan('spoolrail configured-orders')->run();
     $job = readQueuedHandleMessageJob();
 
     // --- Assert ---
@@ -39,6 +37,8 @@ test('captures handler Queue policy and message-specific Laravel middleware with
 
 test('redelivers when handler Queue policy capture fails during handoff', function (): void {
     // --- Arrange ---
+    config()->set('queue.default', 'sync');
+
     RecordingMessageHandler::$queuePolicyFailuresRemaining = 1;
 
     Spoolrail::subscribe('orders', 'failing-policy-orders', RecordingMessageHandler::class);
@@ -48,12 +48,12 @@ test('redelivers when handler Queue policy capture fails during handoff', functi
     $failure = null;
 
     try {
-        $this->artisan('spoolrail:consume failing-policy-orders')->run();
+        $this->artisan('spoolrail failing-policy-orders')->run();
     } catch (Throwable $exception) {
         $failure = $exception;
     }
 
-    $this->artisan('spoolrail:consume failing-policy-orders')->run();
+    $this->artisan('spoolrail failing-policy-orders')->run();
 
     // --- Assert ---
     expect($failure?->getMessage())->toBe('Handler queue policy failed.');
@@ -65,12 +65,10 @@ test('redelivers when handler Queue policy capture fails during handoff', functi
 
 test('uses captured Queue policy while resolving a replacement handler at execution', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onQueueConnection('database');
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
-    $this->artisan('spoolrail:consume warehouse-orders')->run();
+    $this->artisan('spoolrail warehouse-orders')->run();
 
     $deployedSubscriptions = new SubscriptionRegistry;
     $deployedSubscriptions

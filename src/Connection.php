@@ -110,6 +110,14 @@ class Connection
     }
 
     /**
+     * @internal
+     */
+    public function ensureConfigured(): void
+    {
+        $this->driver();
+    }
+
+    /**
      * @param  array<array-key, mixed>  $headers
      */
     private function ensureHeadersArePortable(array $headers): void

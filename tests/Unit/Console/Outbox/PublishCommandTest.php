@@ -22,10 +22,4 @@ test('requests a cooperative stop for termination signals', function (): void {
         });
 
     expect($command->handle($publishOutbox))->toBe(PublishCommand::SUCCESS);
-})->skip(
-    ! function_exists('pcntl_signal')
-        || ! defined('SIGINT')
-        || ! defined('SIGTERM')
-        || ! defined('SIGQUIT'),
-    'PCNTL signal handling is unavailable.',
-);
+});

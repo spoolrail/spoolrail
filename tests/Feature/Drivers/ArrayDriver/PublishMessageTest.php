@@ -12,6 +12,8 @@ beforeEach(function (): void {
 
 test('publishes one independently hydrated delivery to every matching subscription', function (): void {
     // --- Arrange ---
+    config()->set('queue.default', 'sync');
+
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
     Spoolrail::subscribe('orders', 'analytics-orders', RecordingMessageHandler::class);
     Spoolrail::subscribe('returns', 'warehouse-returns', RecordingMessageHandler::class);
@@ -22,9 +24,9 @@ test('publishes one independently hydrated delivery to every matching subscripti
         Message::make('order.created', ['reference' => 'A-42']),
         headers: ['correlation-id' => 'A-42'],
     );
-    $this->artisan('spoolrail:consume warehouse-orders')->run();
-    $this->artisan('spoolrail:consume analytics-orders')->run();
-    $this->artisan('spoolrail:consume warehouse-returns')->run();
+    $this->artisan('spoolrail warehouse-orders')->run();
+    $this->artisan('spoolrail analytics-orders')->run();
+    $this->artisan('spoolrail warehouse-returns')->run();
 
     // --- Assert ---
     expect($published->transport)->toBeNull();
@@ -55,6 +57,7 @@ test('publishes one independently hydrated delivery to every matching subscripti
 
 test('publishes only to subscriptions on the selected Spoolrail connection', function (): void {
     // --- Arrange ---
+    config()->set('queue.default', 'sync');
     config()->set('spoolrail.connections.secondary', ['driver' => 'array']);
 
     Spoolrail::subscribe('orders', 'default-orders', RecordingMessageHandler::class);
@@ -66,8 +69,8 @@ test('publishes only to subscriptions on the selected Spoolrail connection', fun
         'orders',
         Message::make('activity.recorded', ['reference' => 'secondary']),
     );
-    $this->artisan('spoolrail:consume default-orders')->run();
-    $this->artisan('spoolrail:consume secondary-orders')->run();
+    $this->artisan('spoolrail default-orders')->run();
+    $this->artisan('spoolrail secondary-orders')->run();
 
     // --- Assert ---
     expect(RecordingMessageHandler::$messages)->toHaveCount(1);
@@ -77,6 +80,8 @@ test('publishes only to subscriptions on the selected Spoolrail connection', fun
 
 test('republishes only explicitly supplied headers without changing the received message', function (): void {
     // --- Arrange ---
+    config()->set('queue.default', 'sync');
+
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class);
     Spoolrail::subscribe('returns', 'warehouse-returns', RecordingMessageHandler::class);
 
@@ -85,14 +90,14 @@ test('republishes only explicitly supplied headers without changing the received
         Message::make('order.created', ['reference' => 'A-42']),
         headers: ['correlation-id' => 'inbound'],
     );
-    $this->artisan('spoolrail:consume warehouse-orders')->run();
+    $this->artisan('spoolrail warehouse-orders')->run();
 
     $received = RecordingMessageHandler::$messages[0];
     $inboundTransport = $received->transport;
 
     // --- Act ---
     $republished = Spoolrail::publish('returns', $received);
-    $this->artisan('spoolrail:consume warehouse-returns')->run();
+    $this->artisan('spoolrail warehouse-returns')->run();
 
     // --- Assert ---
     $deliveredAgain = RecordingMessageHandler::$messages[1];

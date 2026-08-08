@@ -26,6 +26,8 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 **Publication policy stays above drivers**: The connection boundary prepares the portable publication once, then either sends it directly or stores it durably. Outbox dispatch sends that stored envelope through the selected driver without restamping it, while drivers remain unaware of the outbox.
 
-**Consumption bridges to Laravel Queue**: A transport delivery becomes a Laravel Queue job; the queue worker invokes the handler later.
+**Consumption bridges to Laravel Queue**: A transport delivery becomes a Laravel Queue job; an asynchronous queue worker invokes the handler later. The `sync` Queue connection executes the handler inside the consumer's handoff and retains the same settle-after-success rule.
+
+**Supervision selects processes, not messages**: The public consumer parent starts one clean PHP child per active subscription on one Spoolrail connection. Each child owns its transport receive loop and Queue handoff; the parent never receives, buffers, schedules, or settles deliveries.
 
 **Topology management is optional**: Drivers may support publishing and consumption without managing topology. Topology operations skip or reject those drivers instead of requiring every driver to own broker resources.
