@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Spoolrail\Spoolrail\Console\Outbox;
+namespace Spoolrail\Spoolrail\Console;
 
 use Illuminate\Console\Command;
 use Spoolrail\Spoolrail\Outbox\PublishOutbox;
 
 class PublishCommand extends Command
 {
-    protected $signature = 'spoolrail:outbox:publish';
+    protected $signature = 'spoolrail:publish';
 
     protected $description = 'Publish committed Spoolrail outbox messages';
 

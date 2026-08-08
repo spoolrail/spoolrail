@@ -9,7 +9,7 @@ use Override;
 use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
 use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
-use Spoolrail\Spoolrail\Console\Outbox\PublishCommand;
+use Spoolrail\Spoolrail\Console\PublishCommand;
 use Spoolrail\Spoolrail\Console\SpoolrailCommand;
 use Spoolrail\Spoolrail\Console\SyncCommand;
 use Spoolrail\Spoolrail\Console\TerminateCommand;

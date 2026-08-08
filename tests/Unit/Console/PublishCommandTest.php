@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Console\Outbox\PublishCommand;
+use Spoolrail\Spoolrail\Console\PublishCommand;
 use Spoolrail\Spoolrail\Outbox\PublishOutbox;
 
 test('requests a cooperative stop for termination signals', function (): void {

@@ -57,7 +57,7 @@ test('publishes committed rows and removes them after broker acceptance', functi
     );
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $exitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($exitCode)->toBe(0);
@@ -200,7 +200,7 @@ test('blocks a failed lane while publishing unrelated lanes and returns failure'
     );
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $exitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     $pending = DB::table('outbox_publications')->orderBy('id')->get();
@@ -238,7 +238,7 @@ test('attempts fresh lane heads before retrying known failures', function (): vo
         'orders',
         Message::make('order.created', ['sequence' => 'known-failure']),
     );
-    $this->artisan('spoolrail:outbox:publish')->run();
+    $this->artisan('spoolrail:publish')->run();
     $attempts = [];
 
     Spoolrail::connection('events')->publish(
@@ -247,7 +247,7 @@ test('attempts fresh lane heads before retrying known failures', function (): vo
     );
 
     // --- Act ---
-    $this->artisan('spoolrail:outbox:publish')->run();
+    $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($attempts)->toBe([
@@ -285,7 +285,7 @@ test('leaves rows staged during dispatch for the next bounded run', function ():
     );
 
     // --- Act ---
-    $firstExitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $firstExitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($firstExitCode)->toBe(0);
@@ -293,7 +293,7 @@ test('leaves rows staged during dispatch for the next bounded run', function ():
     expect(DB::table('outbox_publications')->count())->toBe(1);
 
     // --- Act ---
-    $secondExitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $secondExitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($secondExitCode)->toBe(0);
@@ -329,7 +329,7 @@ test('resolves the stored connection name from current configuration', function 
     Spoolrail::extend('current', static fn (): Driver => $driver);
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $exitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($exitCode)->toBe(0);
@@ -354,7 +354,7 @@ test('stores a single-line failure summary limited to five hundred characters', 
     );
 
     // --- Act ---
-    $this->artisan('spoolrail:outbox:publish')->run();
+    $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     $summary = DB::table('outbox_publications')->sole()->last_error;
@@ -391,8 +391,8 @@ test('reports every failed attempt when the reporting cache is unavailable', fun
     app()->instance(ExceptionHandler::class, $handler);
 
     // --- Act ---
-    $firstExitCode = $this->artisan('spoolrail:outbox:publish')->run();
-    $secondExitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $firstExitCode = $this->artisan('spoolrail:publish')->run();
+    $secondExitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($firstExitCode)->toBe(1);
@@ -448,13 +448,13 @@ test('throttles failure reports per row and logs recovery after deletion', funct
 
     // --- Act ---
     CarbonImmutable::setTestNow('2026-08-06 12:00:00 UTC');
-    $firstExitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $firstExitCode = $this->artisan('spoolrail:publish')->run();
     $firstUpdatedAt = DB::table('outbox_publications')->sole()->updated_at;
     CarbonImmutable::setTestNow('2026-08-06 12:00:01 UTC');
-    $secondExitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $secondExitCode = $this->artisan('spoolrail:publish')->run();
     $secondRow = DB::table('outbox_publications')->sole();
     CarbonImmutable::setTestNow('2026-08-06 12:00:02 UTC');
-    $thirdExitCode = $this->artisan('spoolrail:outbox:publish')->run();
+    $thirdExitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($firstExitCode)->toBe(1);
