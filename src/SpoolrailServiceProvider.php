@@ -10,7 +10,9 @@ use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
 use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
 use Spoolrail\Spoolrail\Console\Outbox\PublishCommand;
+use Spoolrail\Spoolrail\Console\SpoolrailCommand;
 use Spoolrail\Spoolrail\Console\SyncCommand;
+use Spoolrail\Spoolrail\Console\TerminateCommand;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
 class SpoolrailServiceProvider extends ServiceProvider
@@ -38,11 +40,13 @@ class SpoolrailServiceProvider extends ServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->commands([
+                SpoolrailCommand::class,
                 ConsumeCommand::class,
                 DeleteTopicCommand::class,
                 DeleteUndeclaredSubscriptionsCommand::class,
                 PublishCommand::class,
                 SyncCommand::class,
+                TerminateCommand::class,
             ]);
         }
 

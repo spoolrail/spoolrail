@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Database\QueryException;
-use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\ManuallyFailedException;
 use Illuminate\Support\Facades\DB;
@@ -25,12 +23,12 @@ test('rejects a queued-message drain name as an active subscription', function (
     Spoolrail::subscribe('orders', 'warehouse-order-processing-v2', RecordingMessageHandler::class)
         ->drainMessagesQueuedFor('warehouse-order-processing');
 
-    expect(fn () => $this->artisan('spoolrail:consume warehouse-order-processing')->run())
+    expect(fn () => $this->artisan('spoolrail warehouse-order-processing')->run())
         ->toThrow(InvalidSubscriptionException::class);
 });
 
 test('rejects an unknown subscription', function (): void {
-    expect(fn () => $this->artisan('spoolrail:consume missing-subscription')->run())
+    expect(fn () => $this->artisan('spoolrail missing-subscription')->run())
         ->toThrow(
             InvalidSubscriptionException::class,
             'Subscription [missing-subscription] has not been registered.',
@@ -39,25 +37,35 @@ test('rejects an unknown subscription', function (): void {
 
 test('uses the subscription Laravel Queue connection and queue overrides', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     Spoolrail::subscribe('orders', 'priority-orders', RecordingMessageHandler::class)
         ->onQueueConnection('database')
         ->onQueue('courier-broker');
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $this->artisan('spoolrail:consume priority-orders')->run();
+    $this->artisan('spoolrail priority-orders')->run();
 
     // --- Assert ---
     expect(DB::connection('testing')->table('jobs')->pluck('queue')->all())
         ->toBe(['courier-broker']);
 });
 
+test('uses the application default Laravel Queue connection when the subscription does not override it', function (): void {
+    // --- Arrange ---
+    Spoolrail::subscribe('orders', 'default-queue-orders', RecordingMessageHandler::class);
+    Spoolrail::publish('orders', Message::make('order.created', []));
+
+    // --- Act ---
+    $this->artisan('spoolrail default-queue-orders')->run();
+
+    // --- Assert ---
+    expect(DB::connection('testing')->table('jobs')->pluck('queue')->all())
+        ->toBe(['default']);
+    expect(RecordingMessageHandler::$messages)->toBe([]);
+});
+
 test('queues one job when the same message is delivered again', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     Spoolrail::subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class)
         ->onQueueConnection('database');
 
@@ -67,7 +75,7 @@ test('queues one job when the same message is delivered again', function (): voi
     Spoolrail::publish('orders', $message);
 
     // --- Act ---
-    $this->artisan('spoolrail:consume warehouse-order-processing')->run();
+    $this->artisan('spoolrail warehouse-order-processing')->run();
 
     // --- Assert ---
     expect(DB::connection('testing')->table('jobs')->count())->toBe(1);
@@ -75,8 +83,6 @@ test('queues one job when the same message is delivered again', function (): voi
 
 test('queues the same message once for each subscription', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     Spoolrail::subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class)
         ->onQueueConnection('database');
     Spoolrail::subscribe('orders', 'billing-order-processing', RecordingMessageHandler::class)
@@ -85,8 +91,8 @@ test('queues the same message once for each subscription', function (): void {
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $this->artisan('spoolrail:consume warehouse-order-processing')->run();
-    $this->artisan('spoolrail:consume billing-order-processing')->run();
+    $this->artisan('spoolrail warehouse-order-processing')->run();
+    $this->artisan('spoolrail billing-order-processing')->run();
 
     // --- Assert ---
     expect(DB::connection('testing')->table('jobs')->count())->toBe(2);
@@ -94,8 +100,6 @@ test('queues the same message once for each subscription', function (): void {
 
 test('rejects an open transaction on the database Queue connection without losing the delivery', function (string $transactionApi): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     Spoolrail::subscribe('orders', 'transaction-orders', RecordingMessageHandler::class)
         ->onQueueConnection('database');
     Spoolrail::publish('orders', Message::make('order.created', []));
@@ -114,7 +118,7 @@ test('rejects an open transaction on the database Queue connection without losin
         $failure = null;
 
         try {
-            $this->artisan('spoolrail:consume transaction-orders')->run();
+            $this->artisan('spoolrail transaction-orders')->run();
         } catch (Throwable $exception) {
             $failure = $exception;
         }
@@ -128,7 +132,7 @@ test('rejects an open transaction on the database Queue connection without losin
         }
     }
 
-    $this->artisan('spoolrail:consume transaction-orders')->run();
+    $this->artisan('spoolrail transaction-orders')->run();
 
     // --- Assert ---
     expect($failure)->toBeInstanceOf(LogicException::class);
@@ -144,8 +148,6 @@ test('rejects an open transaction on the database Queue connection without losin
 
 test('uses a database Queue while an unrelated database connection has an open transaction', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     config()->set('database.connections.unrelated', [
         'driver' => 'sqlite',
         'database' => ':memory:',
@@ -160,7 +162,7 @@ test('uses a database Queue while an unrelated database connection has an open t
 
     // --- Act ---
     try {
-        $this->artisan('spoolrail:consume independent-transaction-orders')->run();
+        $this->artisan('spoolrail independent-transaction-orders')->run();
     } finally {
         $unrelated->rollBack();
     }
@@ -172,7 +174,6 @@ test('uses a database Queue while an unrelated database connection has an open t
 
 test('invokes the failure callback once after Laravel exhausts asynchronous attempts without redelivering the source', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
     config()->set('queue.failed.driver', 'null');
 
     $failedJobs = [];
@@ -187,13 +188,13 @@ test('invokes the failure callback once after Laravel exhausts asynchronous atte
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $this->artisan('spoolrail:consume worker-failure')->run();
+    $this->artisan('spoolrail worker-failure')->run();
 
     foreach (range(1, 4) as $_) {
         $this->artisan('queue:work database --once --sleep=0')->run();
     }
 
-    $this->artisan('spoolrail:consume worker-failure')->run();
+    $this->artisan('spoolrail worker-failure')->run();
 
     // --- Assert ---
     expect($failedJobs)->toHaveCount(1);
@@ -211,6 +212,8 @@ test('invokes the failure callback once after Laravel exhausts asynchronous atte
 
 test('redelivers a sync delivery and invokes the failure callback for each failed Queue job', function (): void {
     // --- Arrange ---
+    config()->set('queue.default', 'sync');
+
     RecordingMessageHandler::$handlerFailuresRemaining = 2;
 
     Spoolrail::subscribe('orders', 'sync-failure', RecordingMessageHandler::class);
@@ -221,14 +224,14 @@ test('redelivers a sync delivery and invokes the failure callback for each faile
 
     foreach (range(1, 2) as $_) {
         try {
-            $this->artisan('spoolrail:consume sync-failure')->run();
+            $this->artisan('spoolrail sync-failure')->run();
         } catch (Throwable $exception) {
             $failures[] = $exception;
         }
     }
 
-    $this->artisan('spoolrail:consume sync-failure')->run();
-    $this->artisan('spoolrail:consume sync-failure')->run();
+    $this->artisan('spoolrail sync-failure')->run();
+    $this->artisan('spoolrail sync-failure')->run();
 
     // --- Assert ---
     expect($failures)->toHaveCount(2);
@@ -249,7 +252,6 @@ test('redelivers a sync delivery and invokes the failure callback for each faile
 
 test('passes a null cause to the handler when middleware fails a job without an exception', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
     config()->set('queue.failed.driver', 'null');
 
     $failedJobs = [];
@@ -264,7 +266,7 @@ test('passes a null cause to the handler when middleware fails a job without an 
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $this->artisan('spoolrail:consume manual-failure')->run();
+    $this->artisan('spoolrail manual-failure')->run();
     $this->artisan('queue:work database --once --sleep=0')->run();
 
     // --- Assert ---
@@ -278,7 +280,6 @@ test('passes a null cause to the handler when middleware fails a job without an 
 
 test('preserves the original Laravel failure when the queued subscription no longer resolves', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
     config()->set('queue.failed.driver', 'null');
 
     $failedJobs = [];
@@ -289,7 +290,7 @@ test('preserves the original Laravel failure when the queued subscription no lon
     Spoolrail::subscribe('orders', 'removed-subscription', RecordingMessageHandler::class)
         ->onQueueConnection('database');
     Spoolrail::publish('orders', Message::make('order.created', []));
-    $this->artisan('spoolrail:consume removed-subscription')->run();
+    $this->artisan('spoolrail removed-subscription')->run();
 
     app()->instance(SubscriptionRegistry::class, new SubscriptionRegistry);
 
@@ -306,6 +307,8 @@ test('preserves the original Laravel failure when the queued subscription no lon
 
 test('propagates failure callback exceptions after Laravel reports the original failure', function (): void {
     // --- Arrange ---
+    config()->set('queue.default', 'sync');
+
     $failedJobs = [];
     Event::listen(JobFailed::class, function (JobFailed $event) use (&$failedJobs): void {
         $failedJobs[] = $event;
@@ -321,13 +324,13 @@ test('propagates failure callback exceptions after Laravel reports the original 
     $failure = null;
 
     try {
-        $this->artisan('spoolrail:consume callback-failure')->run();
+        $this->artisan('spoolrail callback-failure')->run();
     } catch (Throwable $exception) {
         $failure = $exception;
     }
 
     RecordingMessageHandler::$callbackFailure = null;
-    $this->artisan('spoolrail:consume callback-failure')->run();
+    $this->artisan('spoolrail callback-failure')->run();
 
     // --- Assert ---
     expect($failure?->getMessage())->toBe('Failure callback failed.');
@@ -335,39 +338,4 @@ test('propagates failure callback exceptions after Laravel reports the original 
     expect($failedJobs[0]->exception->getMessage())->toBe('Handler failed.');
     expect(RecordingMessageHandler::$failedMessages)->toHaveCount(1);
     expect(RecordingMessageHandler::$messages)->toHaveCount(1);
-});
-
-test('propagates a rejected database Queue handoff without logging or losing buffered deliveries', function (): void {
-    // --- Arrange ---
-    $logs = [];
-    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$logs): void {
-        $logs[] = $event;
-    });
-
-    Spoolrail::subscribe('orders', 'queue-failure', RecordingMessageHandler::class)
-        ->onQueueConnection('database');
-    Spoolrail::publish('orders', Message::make('order.created', ['sequence' => 1]));
-    Spoolrail::publish('orders', Message::make('order.created', ['sequence' => 2]));
-
-    // --- Act ---
-    $failure = null;
-
-    try {
-        $this->artisan('spoolrail:consume queue-failure')->run();
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    $this->createJobsTable();
-    $this->artisan('spoolrail:consume queue-failure')->run();
-    $this->artisan('queue:work database --once')->run();
-    $this->artisan('queue:work database --once')->run();
-
-    // --- Assert ---
-    expect($failure)->toBeInstanceOf(QueryException::class);
-    expect(array_map(
-        static fn (Message $message): int => $message->payload['sequence'],
-        RecordingMessageHandler::$messages,
-    ))->toBe([1, 2]);
-    expect($logs)->toBe([]);
 });

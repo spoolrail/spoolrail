@@ -8,6 +8,7 @@ use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
+use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
@@ -68,9 +69,35 @@ test('rejects a non-positive handoff idempotency expiry', function (): void {
         );
 });
 
+test('allows the same message to be handed off after Laravel Queue rejects it', function (): void {
+    // --- Arrange ---
+    $failure = new RuntimeException('Laravel Queue is unavailable.');
+    $queue = Mockery::mock(Queue::class);
+    $queue->expects('push')->once()->ordered()->andThrow($failure);
+    $queue->expects('push')->once()->ordered()->andReturn('queued');
+
+    $subscription = (new SubscriptionRegistry)
+        ->subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class);
+    $message = Message::make('order.created', []);
+    $handoff = app(QueueHandoff::class);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $handoff->push($subscription, $message, $queue);
+    } catch (Throwable $exception) {
+        $caught = $exception;
+    }
+
+    $handoff->push($subscription, $message, $queue);
+
+    // --- Assert ---
+    expect($caught)->toBe($failure);
+});
+
 test('accepts a handoff after a contended attempt lock expires', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
     config()->set('spoolrail.handoff_idempotency.expiry', 60);
 
     $subscription = (new SubscriptionRegistry)
@@ -103,7 +130,6 @@ test('accepts a handoff after a contended attempt lock expires', function (): vo
 
 test('queues the message again after its completion lock expires', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
     config()->set('spoolrail.handoff_idempotency.expiry', 60);
 
     $subscription = (new SubscriptionRegistry)
@@ -124,8 +150,6 @@ test('queues the message again after its completion lock expires', function (): 
 
 test('rejects a completion lock with an unknown owner', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
-
     $subscription = (new SubscriptionRegistry)
         ->subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class);
     $message = Message::make('order.created', []);
@@ -157,7 +181,6 @@ test('rejects a completion lock with an unknown owner', function (): void {
 
 test('allows another handoff after a failed completion lock expires', function (): void {
     // --- Arrange ---
-    $this->createJobsTable();
     config()->set('spoolrail.handoff_idempotency.expiry', 60);
 
     $completionFailuresRemaining = 1;

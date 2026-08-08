@@ -2,9 +2,21 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Console\Kernel;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\SpoolrailServiceProvider;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+
+test('registers the public supervisor and hidden consumer command', function (): void {
+    // --- Act ---
+    $commands = app(Kernel::class)->all();
+
+    // --- Assert ---
+    expect($commands)->toHaveKeys(['spoolrail', 'spoolrail:terminate', 'spoolrail:consume']);
+    expect($commands)->not->toHaveKey('spoolrail:work');
+    expect($commands['spoolrail']->isHidden())->toBeFalse();
+    expect($commands['spoolrail:consume']->isHidden())->toBeTrue();
+});
 
 test('publishes the package config under the spoolrail config tag', function (): void {
     // --- Act ---
@@ -46,6 +58,12 @@ test('loads the direct publication policy and outbox defaults', function (): voi
     expect(config('spoolrail.outbox'))->toBe([
         'enabled' => false,
         'connection' => 'testing',
+        'exception_cooldown' => 300,
+    ]);
+});
+
+test('loads the consumer exception cooldown default', function (): void {
+    expect(config('spoolrail.consumer'))->toBe([
         'exception_cooldown' => 300,
     ]);
 });

@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Queue\DatabaseQueue;
 use LogicException;
 use PDO;
+use Spoolrail\Spoolrail\Connection;
 use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\TransportContext;
@@ -25,15 +26,7 @@ class SubscriptionConsumer
 
     public function consume(string $subscriptionName): void
     {
-        $subscription = $this->subscriptions->findOrFail($subscriptionName);
-        $connection = $this->manager->connection(
-            $subscription->connectionName($this->manager->defaultConnectionName()),
-        );
-
-        $queue = $this->queues->connection($subscription->queueConnectionName());
-
-        $this->rejectTransactionalDatabaseQueue($queue);
-        $this->queueHandoff->ensureConfigured();
+        [$subscription, $connection, $queue] = $this->resolve($subscriptionName);
 
         $connection->consume(
             $subscription->name(),
@@ -41,6 +34,29 @@ class SubscriptionConsumer
                 $this->handoff($body, $transport, $subscription, $queue);
             },
         );
+    }
+
+    public function ensureCanConsume(string $subscriptionName): void
+    {
+        $this->resolve($subscriptionName);
+    }
+
+    /**
+     * @return array{Subscription, Connection, Queue}
+     */
+    private function resolve(string $subscriptionName): array
+    {
+        $subscription = $this->subscriptions->findOrFail($subscriptionName);
+        $connection = $this->manager->connection(
+            $subscription->connectionName($this->manager->defaultConnectionName()),
+        );
+        $connection->ensureConfigured();
+        $queue = $this->queues->connection($subscription->queueConnectionName());
+
+        $this->rejectTransactionalDatabaseQueue($queue);
+        $this->queueHandoff->ensureConfigured();
+
+        return [$subscription, $connection, $queue];
     }
 
     private function handoff(

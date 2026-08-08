@@ -75,6 +75,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Consumer Supervision
+    |--------------------------------------------------------------------------
+    |
+    | Repeated reports for the same consumer failure category are throttled
+    | for the number of seconds configured below.
+    |
+    */
+
+    'consumer' => [
+        'exception_cooldown' => 300,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Transactional Outbox
     |--------------------------------------------------------------------------
     |

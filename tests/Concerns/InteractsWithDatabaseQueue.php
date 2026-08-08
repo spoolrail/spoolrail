@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\Schema;
 
 trait InteractsWithDatabaseQueue
 {
-    protected function createJobsTable(): void
+    protected function setUpInteractsWithDatabaseQueue(): void
     {
+        config()->set('queue.default', 'database');
+
         Schema::connection('testing')->create('jobs', function (Blueprint $blueprint): void {
             $blueprint->id();
             $blueprint->string('queue')->index();

@@ -84,6 +84,16 @@ class SpoolrailManager
         return $connectionName;
     }
 
+    public function driverName(?string $connectionName = null): string
+    {
+        $connectionName ??= $this->defaultConnectionName();
+
+        return $this->driverNameFrom(
+            $connectionName,
+            $this->connectionConfig($connectionName),
+        );
+    }
+
     /**
      * @return list<string>
      */
@@ -116,7 +126,7 @@ class SpoolrailManager
     private function resolve(string $connectionName): Connection
     {
         $connectionConfig = $this->connectionConfig($connectionName);
-        $driverName = $this->driverName($connectionName, $connectionConfig);
+        $driverName = $this->driverNameFrom($connectionName, $connectionConfig);
         $creator = $this->customCreators[$driverName] ?? null;
 
         if (! $creator instanceof Closure && ! in_array($driverName, ['array', 'rabbitmq'], true)) {
@@ -195,7 +205,7 @@ class SpoolrailManager
     /**
      * @param  array<array-key, mixed>  $connectionConfig
      */
-    private function driverName(string $connectionName, array $connectionConfig): string
+    private function driverNameFrom(string $connectionName, array $connectionConfig): string
     {
         $driver = $connectionConfig['driver'] ?? null;
 
