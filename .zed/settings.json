@@ -1,19 +1,12 @@
 {
     "languages": {
         "PHP": {
-            "language_servers": [
-                "phpantom",
-                "!phpactor",
-                "!intelephense",
-                "!phptools",
-                "..."
-            ],
             "formatter": {
                 "external": {
                     "command": "sh",
                     "arguments": [
                         "-c",
-                        "project_root=$(git -C \"$(dirname \"$1\")\" rev-parse --show-toplevel) && cd \"$project_root\" && exec ./vendor/bin/pint --stdin-filename \"$1\"",
+                        "cd \"$(git -C \"$(dirname \"$1\")\" rev-parse --show-toplevel)\" && exec ./vendor/bin/pint --stdin-filename \"$1\"",
                         "pint",
                         "{buffer_path}"
                     ]

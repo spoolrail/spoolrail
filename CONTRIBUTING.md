@@ -90,18 +90,21 @@ ln -s ../.agents/skills .claude/skills
 
 ### Zed
 
-Zed automatically loads the shared settings from `.zed/settings.json`, whether this repository is opened directly or through its parent workspace.
+Zed automatically loads the shared settings from `.zed/settings.json`, whether the repository is opened directly or as part of a parent workspace.
 
-Please install the following extensions:
+Suggested extensions:
 
-- https://zed.dev/extensions/editorconfig
-- https://zed.dev/extensions/laravel-official
+- [EditorConfig](https://zed.dev/extensions/editorconfig)
+- [PHP](https://zed.dev/extensions/php)
+- [Laravel](https://zed.dev/extensions/laravel-official)
+
+The shared settings don't choose a PHP language server, so configure whichever you like in Zed user settings. [PHPantom](https://zed.dev/docs/languages/php#phpantom) is a good option.
 
 ### VSCode/Cursor
 
-When the project is opened directly, VSCode and Cursor automatically load the shared configuration from `.vscode/`. Please install the automatically suggested extensions.
+When the repo is opened directly, VSCode and Cursor automatically load the shared configuration from `.vscode/` and suggest the recommended extensions for installation. However, they do not discover this configuration when the project is opened as part of a larger monorepo. In that case, the parent workspace must provide its own editor configuration.
 
-However, unlike Zed, they do not discover this configuration when the project is loaded as part of a larger monorepo; that workspace must provide its own editor configuration.
+For PHP language support, install whichever extension you like. [PHPantom](https://marketplace.visualstudio.com/items?itemName=phpantom.phpantom) is a good option.
 
 ### PhpStorm
 
@@ -113,4 +116,4 @@ Recommended setup for consistent formatting:
 - `Settings | Tools | Actions on Save`: enable reformat on save
 - `Settings | Languages & Frameworks | JavaScript | Prettier`: use automatic config, enable "Run on save", and prefer Prettier config. Include `md` in Prettier file extensions.
 
-When opened through a parent monorepo, point Laravel Pint explicitly to this repository's `vendor/bin/pint` and `pint.json`. However, PhpStorm will have to apply these settings project-wide. Sibling PHP projects won't be able to use different Pint rules.
+When opened from a parent monorepo, configure Laravel Pint to use this repository's `vendor/bin/pint` and `pint.json`. PhpStorm applies these settings project-wide, so sibling PHP projects cannot use different Pint rules.

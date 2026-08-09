@@ -6,6 +6,17 @@
             "options": {
                 "parser": "blade"
             }
+        },
+        {
+            "files": [
+                "**/.vscode/extensions.json",
+                "**/.vscode/settings.json",
+                "**/.zed/settings.json"
+            ],
+            "options": {
+                "parser": "json",
+                "trailingComma": "none"
+            }
         }
     ]
 }
