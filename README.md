@@ -6,7 +6,7 @@ Message broker library made native to Laravel for building resilient distributed
 
 ## Documentation
 
-See [spoolrail/docs](https://github.com/spoolrail/docs/blob/main/index.md). 
+See [spoolrail/docs](https://github.com/spoolrail/docs/blob/main/index.md).
 
 Better documentation coming soon once the first 3 planned drivers for 1.0 are out the door (see below).
 

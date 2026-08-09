@@ -86,20 +86,31 @@ mkdir -p .claude
 ln -s ../.agents/skills .claude/skills
 ```
 
-## PhpStorm Setup (Optional)
+## Editor Setup (Optional)
+
+### Zed
+
+Zed automatically loads the shared settings from `.zed/settings.json`, whether this repository is opened directly or through its parent workspace.
+
+Please install the following extensions:
+
+- https://zed.dev/extensions/editorconfig
+- https://zed.dev/extensions/laravel-official
+
+### VSCode/Cursor
+
+When the project is opened directly, VSCode and Cursor automatically load the shared configuration from `.vscode/`. Please install the automatically suggested extensions.
+
+However, unlike Zed, they do not discover this configuration when the project is loaded as part of a larger monorepo; that workspace must provide its own editor configuration.
+
+### PhpStorm
 
 Recommended setup for consistent formatting:
 
 - `Settings | Editor | Code Style`: ensure "Enable EditorConfig support" is checked.
-- `Settings | PHP | Quality Tools | Laravel Pint`: use ruleset from `pint.json`
+- `Settings | PHP | Quality Tools | Laravel Pint`: set "Path to pint.json" to `pint.json` and select "defined in pint.json" as the ruleset
 - `Settings | PHP | Quality Tools`: set Laravel Pint as external formatter
 - `Settings | Tools | Actions on Save`: enable reformat on save
 - `Settings | Languages & Frameworks | JavaScript | Prettier`: use automatic config, enable "Run on save", and prefer Prettier config. Include `md` in Prettier file extensions.
 
-## VSCode/Cursor Setup (Optional)
-
-VSCode and Cursor will automatically detect formatting settings defined in the `.vscode/` folder – no additional setup is needed beyond installing the suggested extensions.
-
-## Zed Setup (Optional)
-
-This project does not maintain Zed editor configuration, but you may [download suggested config files from this Gist](https://gist.github.com/adiachenko/57feb8fb900453b33881e622e8152b67).
+When opened through a parent monorepo, point Laravel Pint explicitly to this repository's `vendor/bin/pint` and `pint.json`. However, PhpStorm will have to apply these settings project-wide. Sibling PHP projects won't be able to use different Pint rules.

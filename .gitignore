@@ -18,7 +18,8 @@ package-lock.json
 
 # Editors
 .idea/
-.zed/
+.zed/*
+!.zed/settings.json
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json

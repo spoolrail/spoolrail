@@ -1,0 +1,65 @@
+{
+    "languages": {
+        "PHP": {
+            "language_servers": [
+                "phpantom",
+                "!phpactor",
+                "!intelephense",
+                "!phptools",
+                "..."
+            ],
+            "formatter": {
+                "external": {
+                    "command": "sh",
+                    "arguments": [
+                        "-c",
+                        "project_root=$(git -C \"$(dirname \"$1\")\" rev-parse --show-toplevel) && cd \"$project_root\" && exec ./vendor/bin/pint --stdin-filename \"$1\"",
+                        "pint",
+                        "{buffer_path}"
+                    ]
+                }
+            },
+            "format_on_save": "on"
+        },
+        "Blade": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "Markdown": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "JSON": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "JSONC": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "JavaScript": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "TypeScript": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "TSX": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "YAML": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "Vue.js": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        },
+        "CSS": {
+            "formatter": "prettier",
+            "format_on_save": "on"
+        }
+    }
+}
