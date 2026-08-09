@@ -1,20 +1,32 @@
 services:
   rabbitmq:
-    image: rabbitmq:4.3-management
+    image: rabbitmq:4.3.3-management
     environment:
       RABBITMQ_DEFAULT_USER: spoolrail
       RABBITMQ_DEFAULT_PASS: spoolrail
       RABBITMQ_DEFAULT_VHOST: spoolrail
     ports:
-      - "127.0.0.1:${SPOOLRAIL_RABBITMQ_PORT:-5672}:5672"
-      - "127.0.0.1:${SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
+      - "${SPOOLRAIL_RABBITMQ_PORT:-5672}:5672"
+      - "${SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 2s
       timeout: 5s
       retries: 30
 
-volumes:
-  rabbitmq-data:
+  aws:
+    image: ministackorg/ministack:1.4.14
+    ports:
+      - "${SPOOLRAIL_AWS_PORT:-4566}:4566"
+    # MiniStack includes a built-in image health check.
+
+  gcloud:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:579.0.0-emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=spoolrail
+    ports:
+      - "${SPOOLRAIL_GCLOUD_PORT:-8085}:8085"
+    healthcheck:
+      test: curl -fsS http://localhost:8085/v1/projects/spoolrail/topics
+      interval: 2s
+      timeout: 5s
+      retries: 30

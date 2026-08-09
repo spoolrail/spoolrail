@@ -9,21 +9,19 @@ composer install
 npm install
 ```
 
-## RabbitMQ
+## Docker
 
-RabbitMQ 4.3 is an internal development and testing dependency. Start the repository-managed broker and its Management HTTP API before running the test suite:
+Start the repository-managed services before running tests or developing a driver:
 
 ```bash
-docker compose up -d --wait rabbitmq
+docker compose up -d --wait
 composer test
 ```
 
-The default endpoints are `amqp://spoolrail:spoolrail@127.0.0.1:5672/spoolrail` and `http://127.0.0.1:15672`. The test defaults live in `phpunit.xml.dist`. If either host port is occupied, set `SPOOLRAIL_RABBITMQ_PORT` or `SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT` before starting Compose and supply the matching `RABBITMQ_PORT` or `RABBITMQ_MANAGEMENT_URL` when running tests.
-
-RabbitMQ scenarios are part of the ordinary Feature suite. `composer test` never starts, restarts, or stops Docker containers; it fails clearly rather than silently skipping those scenarios when the broker is unavailable. Stop and remove the service when it is no longer needed:
+Stop them with:
 
 ```bash
-docker compose down --volumes
+docker compose down
 ```
 
 ## Git Hooks
