@@ -13,8 +13,8 @@ cat > "$hooks_dir/pre-commit" <<'EOF'
 #!/usr/bin/env sh
 set -e
 
-# Run Pint before commit
-composer format
+# Check formatting before commit
+composer format:check
 EOF
 
 cat > "$hooks_dir/pre-push" <<'EOF'
@@ -27,4 +27,4 @@ EOF
 
 chmod +x "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
 
-echo "Git hooks installed: pre-commit (Pint), pre-push (PHPStan)."
+echo "Git hooks installed: pre-commit (format check), pre-push (PHPStan)."

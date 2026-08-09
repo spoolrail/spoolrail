@@ -36,7 +36,7 @@ sh install-git-hooks.sh
 
 Installed hooks:
 
-- `pre-commit` runs `composer format`
+- `pre-commit` runs `composer format:check`
 - `pre-push` runs `composer analyse`
 
 If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-dev/Tracker/issues/996).
