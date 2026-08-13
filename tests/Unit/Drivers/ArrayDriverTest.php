@@ -13,7 +13,7 @@ test('reserves an in-flight delivery from a competing consumer', function (): vo
     $subscriptions->subscribe('orders', 'competing-orders', RecordingMessageHandler::class);
 
     $driver = new ArrayDriver('array', 'array', $subscriptions);
-    $driver->publish('orders', 'first order', ['correlation-id' => 'first']);
+    $driver->publish('orders', 'first order', ['correlation-id' => 'first'], 'order:1');
     $driver->publish('orders', 'second order', ['correlation-id' => 'second']);
 
     $bodies = [];
@@ -75,6 +75,7 @@ test('releases a failed handoff and stops the current delivery drain', function 
     expect($contexts[0]->transportMessageId)->toBeNull();
     expect($contexts[0]->transportPublishedAt)->toBeNull();
     expect($contexts[0]->redelivered)->toBeFalse();
+    expect($contexts[0]->orderingKey)->toBeNull();
     expect($contexts[1]->headers)->toBe(['correlation-id' => 'first']);
     expect($contexts[1]->redelivered)->toBeTrue();
     expect($contexts[2]->headers)->toBe(['correlation-id' => 'second']);

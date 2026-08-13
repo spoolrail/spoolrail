@@ -22,7 +22,7 @@ class ConsumptionException extends RuntimeException implements SpoolrailExceptio
     {
         return new self(
             ConsumptionFailure::ConsumerStopped,
-            'RabbitMQ consumption stopped unexpectedly.',
+            'Transport consumption stopped unexpectedly.',
             $previous,
         );
     }
@@ -31,7 +31,7 @@ class ConsumptionException extends RuntimeException implements SpoolrailExceptio
     {
         return new self(
             ConsumptionFailure::SettlementFailed,
-            'RabbitMQ could not acknowledge a message after handing it to Laravel Queue.',
+            'The transport could not settle a message after handing it to Laravel Queue.',
             $previous,
         );
     }

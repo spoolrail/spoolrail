@@ -82,16 +82,35 @@ test('loads the built-in RabbitMQ connection template', function (): void {
     expect($connection['driver'])->toBe('rabbitmq');
     expect($connection['scheme'])->toBe('amqp');
     expect($connection['host'])->toBe('127.0.0.1');
-    expect($connection['username'])->toBe('spoolrail');
-    expect($connection['password'])->toBe('spoolrail');
+    expect($connection['username'])->toBe('test');
+    expect($connection['password'])->toBe('test');
     expect($connection['ca_file'])->toBeNull();
     expect($connection['connection_timeout'])->toBe(3);
     expect($connection['publisher_confirm_timeout'])->toBe(60);
     expect($connection['prefetch'])->toBe(10);
     expect($connection['management']['url'])->toBe('http://127.0.0.1:15672');
-    expect($connection['management']['username'])->toBe('spoolrail');
-    expect($connection['management']['password'])->toBe('spoolrail');
+    expect($connection['management']['username'])->toBe('test');
+    expect($connection['management']['password'])->toBe('test');
     expect($connection['management']['ca_file'])->toBeNull();
+});
+
+test('loads the built-in SNS/SQS connection template', function (): void {
+    $connection = config('spoolrail.connections.snssqs');
+    $region = $connection['region'] ?? null;
+    unset($connection['region']);
+
+    expect($region)->toBeString()->not->toBeEmpty();
+    expect($connection)->toBe([
+        'driver' => 'snssqs',
+        'key' => '000000000000',
+        'secret' => 'test',
+        'token' => null,
+        'account_id' => '000000000000',
+        'endpoint' => 'http://127.0.0.1:4566',
+        'fifo' => true,
+        'connection_timeout' => 3,
+        'request_timeout' => 60,
+    ]);
 });
 
 test('loads application subscription routes without deriving an ownership prefix or resolving a broker connection', function (): void {

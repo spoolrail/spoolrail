@@ -35,6 +35,7 @@ test('stages a normalized publication without resolving the broker driver', func
         'orders',
         $message,
         ['correlation-id' => 'order-42'],
+        orderingKey: 'order:42',
     );
 
     // --- Assert ---
@@ -49,6 +50,7 @@ test('stages a normalized publication without resolving the broker driver', func
     expect($message->publishedAt)->toBeNull();
     expect($row->connection)->toBe('events');
     expect($row->topic)->toBe('orders');
+    expect($row->ordering_key)->toBe('order:42');
     expect($storedMessage)->toBe([
         'id' => $published->id,
         'type' => 'order.created',
@@ -139,7 +141,7 @@ test('publishes directly without an outbox table when the policy is disabled', f
     $driver = Mockery::mock(Driver::class);
     $driver->expects('publish')
         ->once()
-        ->with('orders', Mockery::type('string'), []);
+        ->with('orders', Mockery::type('string'), [], null);
     $driver->allows('consume');
 
     Spoolrail::extend('recording', static fn (): Driver => $driver);

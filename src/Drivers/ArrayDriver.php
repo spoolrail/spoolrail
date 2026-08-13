@@ -32,8 +32,12 @@ class ArrayDriver implements Driver
     /**
      * @param  array<string, string>  $headers
      */
-    public function publish(string $topic, string $body, array $headers): void
-    {
+    public function publish(
+        string $topic,
+        string $body,
+        array $headers,
+        ?string $orderingKey = null,
+    ): void {
         foreach ($this->matchingSubscriptions($topic) as $subscription) {
             $this->deliveries[$subscription->name()][] = [
                 'topic' => $topic,

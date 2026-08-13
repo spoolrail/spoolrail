@@ -2,9 +2,8 @@ services:
   rabbitmq:
     image: rabbitmq:4.3.3-management
     environment:
-      RABBITMQ_DEFAULT_USER: spoolrail
-      RABBITMQ_DEFAULT_PASS: spoolrail
-      RABBITMQ_DEFAULT_VHOST: spoolrail
+      RABBITMQ_DEFAULT_USER: test
+      RABBITMQ_DEFAULT_PASS: test
     ports:
       - "${SPOOLRAIL_RABBITMQ_PORT:-5672}:5672"
       - "${SPOOLRAIL_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"

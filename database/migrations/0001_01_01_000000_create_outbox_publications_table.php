@@ -23,6 +23,7 @@ return new class extends Migration
             $table->string('topic', 251);
             $table->json('message');
             $table->json('headers');
+            $table->string('ordering_key', 128)->nullable();
             $table->string('last_error', 500)->nullable();
             $table->timestamps();
 

@@ -48,8 +48,12 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
     /**
      * @param  array<string, string>  $headers
      */
-    public function publish(string $topic, string $body, array $headers): void
-    {
+    public function publish(
+        string $topic,
+        string $body,
+        array $headers,
+        ?string $orderingKey = null,
+    ): void {
         ResourceName::topic($topic);
 
         try {

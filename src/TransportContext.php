@@ -20,5 +20,6 @@ readonly class TransportContext
         public ?string $transportMessageId = null,
         public ?CarbonImmutable $transportPublishedAt = null,
         public ?bool $redelivered = null,
+        public ?string $orderingKey = null,
     ) {}
 }

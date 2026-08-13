@@ -27,11 +27,12 @@ class PublicationException extends RuntimeException implements SpoolrailExceptio
         );
     }
 
-    public static function rejected(): self
+    public static function rejected(?Throwable $previous = null): self
     {
         return new self(
             PublicationOutcome::Rejected,
             'The transport rejected the publication.',
+            $previous,
         );
     }
 

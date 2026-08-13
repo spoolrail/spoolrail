@@ -22,7 +22,7 @@ use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
  * @method static Connection connection(?string $name = null)
  * @method static SpoolrailManager extend(string $driver, Closure $creator)
  * @method static void forgetConnection(?string $name = null)
- * @method static Message publish(string $topic, Message $message, array<string, string> $headers = [])
+ * @method static Message publish(string $topic, Message $message, array<string, string> $headers = [], ?string $orderingKey = null)
  *
  * @see SpoolrailManager
  */

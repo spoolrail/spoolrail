@@ -31,11 +31,12 @@ test('publishes committed rows and removes them after broker acceptance', functi
     $driver->allows('consume');
     $driver->shouldReceive('publish')
         ->twice()
-        ->andReturnUsing(function (string $topic, string $body, array $headers) use (&$publications): void {
+        ->andReturnUsing(function (string $topic, string $body, array $headers, ?string $orderingKey) use (&$publications): void {
             $publications[] = [
                 'topic' => $topic,
                 'message' => json_decode($body, true, flags: JSON_THROW_ON_ERROR),
                 'headers' => $headers,
+                'ordering_key' => $orderingKey,
             ];
         });
 
@@ -54,6 +55,7 @@ test('publishes committed rows and removes them after broker acceptance', functi
         'orders',
         Message::make('order.created', ['order_id' => 42]),
         ['correlation-id' => 'order-42'],
+        orderingKey: 'order:42',
     );
 
     // --- Act ---
@@ -71,6 +73,7 @@ test('publishes committed rows and removes them after broker acceptance', functi
                 'published_at' => $first->publishedAt?->format('Y-m-d\TH:i:s.v\Z'),
             ],
             'headers' => [],
+            'ordering_key' => null,
         ],
         [
             'topic' => 'orders',
@@ -81,6 +84,7 @@ test('publishes committed rows and removes them after broker acceptance', functi
                 'published_at' => $second->publishedAt?->format('Y-m-d\TH:i:s.v\Z'),
             ],
             'headers' => ['correlation-id' => 'order-42'],
+            'ordering_key' => 'order:42',
         ],
     ]);
     expect($creations)->toBe(1);
@@ -189,10 +193,12 @@ test('blocks a failed lane while publishing unrelated lanes and returns failure'
     Spoolrail::connection('events')->publish(
         'orders',
         Message::make('order.created', ['sequence' => 'orders-1']),
+        orderingKey: 'order:41',
     );
     Spoolrail::connection('events')->publish(
         'orders',
         Message::make('order.created', ['sequence' => 'orders-2']),
+        orderingKey: 'order:42',
     );
     Spoolrail::connection('events')->publish(
         'returns',

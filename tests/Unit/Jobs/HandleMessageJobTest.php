@@ -81,14 +81,12 @@ test('uses a newly resolved current handler for its failure callback', function 
     $job->failed($failure);
 
     // --- Assert ---
-    expect($resolutions)->toBe(2)
-        ->and(RecordingMessageHandler::$messages)->toHaveCount(1)
-        ->and(RecordingMessageHandler::$messages[0])->toBe($message)
-        ->and(RecordingMessageHandler::$failedMessages)->toHaveCount(1)
-        ->and(RecordingMessageHandler::$failedMessages[0])->toBe($message)
-        ->and(RecordingMessageHandler::$failureCauses)->toHaveCount(1)
-        ->and(RecordingMessageHandler::$failureCauses[0])->toBe($failure)
-        ->and(RecordingMessageHandler::$failedAfterHandling)->toBe([false]);
+    expect($resolutions)->toBe(2);
+
+    expect(RecordingMessageHandler::$messages)->toBe([$message]);
+    expect(RecordingMessageHandler::$failedMessages)->toBe([$message]);
+    expect(RecordingMessageHandler::$failureCauses)->toBe([$failure]);
+    expect(RecordingMessageHandler::$failedAfterHandling)->toBe([false]);
 });
 
 test('does not resolve a handler without a failure callback', function (): void {
@@ -145,8 +143,8 @@ test('propagates handler resolution failures from its failure callback', functio
 test('retains transport context when the universal job is serialized', function (): void {
     // --- Arrange ---
     $transport = new TransportContext(
-        driver: 'rabbitmq',
-        connectionName: 'rabbitmq',
+        driver: 'snssqs',
+        connectionName: 'snssqs',
         topic: 'orders',
         subscription: 'warehouse-orders',
         headers: [
@@ -154,6 +152,7 @@ test('retains transport context when the universal job is serialized', function 
             'transport-added' => 7,
         ],
         redelivered: true,
+        orderingKey: 'order:42',
     );
     $message = Message::make('order.created', ['reference' => 'A-42'])
         ->withPublishedAt(CarbonImmutable::parse('2026-07-15 14:23:08.417 UTC'))

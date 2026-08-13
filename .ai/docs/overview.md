@@ -20,6 +20,8 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 **Preserve transport portability**: Shared message-size and logical resource-name constraints follow the most restrictive target transport. Do not relax them for one driver.
 
+**Keep ordering capability explicit**: A portable ordering key requests the closest native grouping behavior from each driver. Ordering-capable transports preserve order only through broker-to-Queue handoff within one group; other drivers may accept the key without ordering effect, and Laravel Queue execution order remains outside the guarantee.
+
 ## Architectural Boundaries
 
 **Publishing is subscription-independent**: Publishers do not declare or need to know subscriptions, and they do not create topology. Receiving applications must provision the required topic before publication begins.

@@ -40,7 +40,7 @@ return [
     | Here you may configure every Spoolrail connection used by your application.
     | The in-process "array" driver is intended for tests and local simulation.
     |
-    | Supported drivers: "array", "rabbitmq"
+    | Supported drivers: "array", "rabbitmq", "snssqs"
     |
     */
 
@@ -69,6 +69,19 @@ return [
                 'password' => env('RABBITMQ_MANAGEMENT_PASSWORD', env('RABBITMQ_PASSWORD', 'guest')),
                 'ca_file' => null,
             ],
+        ],
+
+        'snssqs' => [
+            'driver' => 'snssqs',
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'token' => env('AWS_SESSION_TOKEN'),
+            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
+            'account_id' => env('AWS_ACCOUNT_ID'),
+            'endpoint' => env('SPOOLRAIL_AWS_ENDPOINT'),
+            'fifo' => true,
+            'connection_timeout' => 3,
+            'request_timeout' => 60,
         ],
 
     ],

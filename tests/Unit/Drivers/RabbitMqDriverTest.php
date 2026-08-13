@@ -53,7 +53,7 @@ test('publishes a persistent message and waits for its confirmation', function (
 
     $driver = rabbitMqDriver($connector, publisherConfirmTimeout: 17);
 
-    $driver->publish('orders', $body, $headers);
+    $driver->publish('orders', $body, $headers, 'order:42');
     $driver->close();
 });
 
@@ -305,6 +305,7 @@ test('acknowledges a delivery only after the handoff returns', function (): void
             expect($transport->transportMessageId)->toBeNull();
             expect($transport->transportPublishedAt)->toBeNull();
             expect($transport->redelivered)->toBeTrue();
+            expect($transport->orderingKey)->toBeNull();
             $events[] = 'handoff';
         });
     } catch (ConsumptionException) {
