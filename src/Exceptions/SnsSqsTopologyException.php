@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Exceptions;
 
+use Aws\Exception\AwsException;
 use RuntimeException;
 use Throwable;
 
@@ -71,5 +72,25 @@ class SnsSqsTopologyException extends RuntimeException implements SpoolrailExcep
     public static function unexpectedCreatedResource(string $expected, string $actual): self
     {
         return new self("AWS created resource [$actual] while Spoolrail expected [$expected].");
+    }
+
+    public function shouldRetry(): bool
+    {
+        $failure = $this->getPrevious();
+
+        if (! $failure instanceof AwsException) {
+            return false;
+        }
+
+        $status = $failure->getStatusCode();
+
+        if (in_array($status, [null, 408, 429], true) || $status >= 500) {
+            return true;
+        }
+
+        $errorCode = (string) $failure->getAwsErrorCode();
+
+        return stripos($errorCode, 'throttl') !== false
+            || in_array($errorCode, ['RequestLimitExceeded', 'TooManyRequestsException'], true);
     }
 }

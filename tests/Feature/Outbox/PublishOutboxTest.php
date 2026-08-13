@@ -18,6 +18,10 @@ use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithOutbox;
 
 uses(InteractsWithOutbox::class);
 
+beforeEach(function (): void {
+    config()->set('spoolrail.publisher_retries.times', 0);
+});
+
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
 });
@@ -88,6 +92,42 @@ test('publishes committed rows and removes them after broker acceptance', functi
         ],
     ]);
     expect($creations)->toBe(1);
+    expect(DB::table('outbox_publications')->count())->toBe(0);
+});
+
+test('retries an outbox publication within the current dispatcher run', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.publisher_retries', [
+        'times' => 2,
+        'delay_milliseconds' => 0,
+    ]);
+    config()->set('spoolrail.connections.events', ['driver' => 'recovering']);
+
+    $attempts = 0;
+    $driver = Mockery::mock(Driver::class);
+    $driver->allows('consume');
+    $driver->expects('publish')
+        ->times(3)
+        ->andReturnUsing(function () use (&$attempts): void {
+            $attempts++;
+
+            if ($attempts < 3) {
+                throw PublicationException::notSent(new RuntimeException('Broker unavailable.'));
+            }
+        });
+    Spoolrail::extend('recovering', static fn (): Driver => $driver);
+
+    Spoolrail::connection('events')->publish(
+        'orders',
+        Message::make('order.created', ['order_id' => 42]),
+    );
+
+    // --- Act ---
+    $exitCode = $this->artisan('spoolrail:publish')->run();
+
+    // --- Assert ---
+    expect($exitCode)->toBe(0);
+    expect($attempts)->toBe(3);
     expect(DB::table('outbox_publications')->count())->toBe(0);
 });
 
@@ -167,7 +207,7 @@ test('records a failed current publication before stopping', function (): void {
     expect($succeeded)->toBeFalse();
     expect($attempts)->toBe([['orders', 'failed']]);
     expect($pending)->toHaveCount(2);
-    expect($pending[0]->last_error)->toBe('The publication failed before the message was sent.');
+    expect($pending[0]->last_error)->toBe('Broker unavailable.');
     expect($pending[1]->last_error)->toBeNull();
 });
 
@@ -217,7 +257,7 @@ test('blocks a failed lane while publishing unrelated lanes and returns failure'
         ['returns', 'returns-1'],
     ]);
     expect($pending)->toHaveCount(2);
-    expect($pending[0]->last_error)->toBe('The publication failed before the message was sent.');
+    expect($pending[0]->last_error)->toBe('Broker unavailable.');
     expect($pending[1]->last_error)->toBeNull();
 });
 
@@ -467,7 +507,7 @@ test('throttles failure reports per row and logs recovery after deletion', funct
     expect($secondExitCode)->toBe(1);
     expect($thirdExitCode)->toBe(0);
     expect($secondRow->last_error)
-        ->toBe('The transport did not confirm the publication; the message may have been accepted.');
+        ->toBe('Confirmation timed out. Awaiting broker.');
     expect($secondRow->updated_at)->not->toBe($firstUpdatedAt);
     expect($reported)->toHaveCount(1);
     expect($reported[0]->outboxId)->toBe($rowId);

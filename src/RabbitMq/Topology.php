@@ -8,6 +8,7 @@ use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 
 class Topology implements CanManageTopology
@@ -21,6 +22,22 @@ class Topology implements CanManageTopology
      * @param  list<Subscription>  $subscriptions
      */
     public function planSync(array $subscriptions, string $ownershipPrefix): TopologyPlan
+    {
+        try {
+            return $this->buildPlan($subscriptions, $ownershipPrefix);
+        } catch (RabbitMqManagementException $exception) {
+            if ($exception->shouldRetry()) {
+                throw TopologySyncRequiresRetryException::afterFailure($exception);
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param  list<Subscription>  $subscriptions
+     */
+    private function buildPlan(array $subscriptions, string $ownershipPrefix): TopologyPlan
     {
         $requiredBindings = array_map(
             static fn (Subscription $subscription): array => [

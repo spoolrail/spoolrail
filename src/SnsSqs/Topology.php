@@ -11,6 +11,7 @@ use Aws\Sts\StsClient;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\SnsSqsTopologyException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Throwable;
 
@@ -44,6 +45,14 @@ class Topology implements CanManageTopology
             return $this->buildPlan($subscriptions, $ownershipPrefix);
         } catch (SnsSqsTopologyException $exception) {
             throw $exception;
+        } catch (AwsException $exception) {
+            $failure = SnsSqsTopologyException::operationFailed('planning synchronization', $exception);
+
+            if ($failure->shouldRetry()) {
+                throw TopologySyncRequiresRetryException::afterFailure($failure);
+            }
+
+            throw $failure;
         } catch (Throwable $exception) {
             throw SnsSqsTopologyException::operationFailed('planning synchronization', $exception);
         }

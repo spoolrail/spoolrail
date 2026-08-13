@@ -18,6 +18,16 @@ test('uses provider-chain credentials and bounded request defaults', function ()
     expect($config->clientOptions())->not->toHaveKey('credentials');
 });
 
+test('retains SDK retries only for ordinary clients', function (): void {
+    $config = new ConnectionConfig('snssqs', [
+        'region' => 'us-east-1',
+        'account_id' => '123456789012',
+    ]);
+
+    expect($config->clientOptions())->not->toHaveKey('retries');
+    expect($config->singleAttemptClientOptions()['retries'])->toBe(0);
+});
+
 test('passes a complete static credential set and custom endpoint to AWS clients', function (): void {
     $config = new ConnectionConfig('snssqs', [
         'key' => 'access-key',

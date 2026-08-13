@@ -132,6 +132,17 @@ readonly class ConnectionConfig
         return $options;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function singleAttemptClientOptions(): array
+    {
+        return [
+            ...$this->clientOptions(),
+            'retries' => 0,
+        ];
+    }
+
     private function requiredString(string $key, string $requirement): string
     {
         $value = $this->config[$key] ?? null;

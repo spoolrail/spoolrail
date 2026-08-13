@@ -9,6 +9,7 @@ use Aws\Result;
 use Aws\Sns\SnsClient;
 use Aws\Sqs\SqsClient;
 use GuzzleHttp\Psr7\Response;
+use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Drivers\SnsSqsDriver;
 use Spoolrail\Spoolrail\Enums\ConsumptionFailure;
@@ -130,6 +131,34 @@ test('reports an explicit SNS refusal as rejected after one attempt', function (
     expect(count($handler))->toBe(0);
 });
 
+test('reports SNS throttling as a retryable failure', function (): void {
+    // --- Arrange ---
+    $client = new SnsClient(snsSqsClientOptions());
+    $failure = new AwsException(
+        'Rate exceeded.',
+        $client->getCommand('Publish'),
+        [
+            'response' => new Response(400),
+            'code' => 'ThrottlingException',
+        ],
+    );
+    $handler = new MockHandler([$failure]);
+    $driver = snsSqsDriver($handler);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $driver->publish('orders', snsSqsMessageBody(), []);
+    } catch (PublicationException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught?->outcome)->toBe(PublicationOutcome::NotSent);
+    expect($caught?->getPrevious())->toBe($failure);
+});
+
 test('reports an uncertain transport failure without a hidden retry', function (): void {
     // --- Arrange ---
     $client = new SnsClient(snsSqsClientOptions());
@@ -221,6 +250,72 @@ test('resolves one queue URL and reuses it for receiving and settlement', functi
     ]);
 });
 
+test('reuses a FIFO receive identity for an SDK retry and refreshes it for the next receive', function (): void {
+    // --- Arrange ---
+    $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders.fifo';
+    $receiveRequestAttemptIds = [];
+    $sqsHandler = new MockHandler([
+        new Result(['QueueUrl' => $queueUrl]),
+        function ($command) use (&$receiveRequestAttemptIds): never {
+            $receiveRequestAttemptIds[] = $command->get('ReceiveRequestAttemptId');
+
+            throw new AwsException(
+                'Service unavailable.',
+                $command,
+                ['response' => new Response(503)],
+            );
+        },
+        function ($command) use (&$receiveRequestAttemptIds): Result {
+            $receiveRequestAttemptIds[] = $command->get('ReceiveRequestAttemptId');
+
+            return new Result(['Messages' => []]);
+        },
+        function ($command) use (&$receiveRequestAttemptIds): never {
+            $receiveRequestAttemptIds[] = $command->get('ReceiveRequestAttemptId');
+
+            throw new AwsException(
+                'Forbidden.',
+                $command,
+                ['response' => new Response(403)],
+            );
+        },
+    ]);
+    $driver = snsSqsDriver(new MockHandler, $sqsHandler, sqsRetries: 1);
+
+    // --- Act ---
+    try {
+        $driver->consume('warehouse-orders', static function (): void {});
+    } catch (ConsumptionException) {
+    }
+
+    // --- Assert ---
+    expect($receiveRequestAttemptIds)->toHaveCount(3);
+    expect(Uuid::isValid($receiveRequestAttemptIds[0]))->toBeTrue();
+    expect($receiveRequestAttemptIds[1])->toBe($receiveRequestAttemptIds[0]);
+    expect(Uuid::isValid($receiveRequestAttemptIds[2]))->toBeTrue();
+    expect($receiveRequestAttemptIds[2])->not->toBe($receiveRequestAttemptIds[0]);
+});
+
+test('omits receive attempt identity for standard queues', function (): void {
+    // --- Arrange ---
+    $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders';
+    $sqsHandler = new MockHandler([
+        new Result(['QueueUrl' => $queueUrl]),
+        new RuntimeException('Stop after the first receive.'),
+    ]);
+    $driver = snsSqsDriver(new MockHandler, $sqsHandler, fifo: false);
+
+    // --- Act ---
+    try {
+        $driver->consume('warehouse-orders', static function (): void {});
+    } catch (ConsumptionException) {
+    }
+
+    // --- Assert ---
+    expect($sqsHandler->getLastCommand()->toArray())
+        ->not->toHaveKey('ReceiveRequestAttemptId');
+});
+
 test('leaves a delivery unsettled and propagates the same handoff failure', function (): void {
     // --- Arrange ---
     $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders.fifo';
@@ -277,7 +372,7 @@ test('reports settlement failure after a successful handoff', function (): void 
 /**
  * @return array<string, mixed>
  */
-function snsSqsClientOptions(?MockHandler $handler = null): array
+function snsSqsClientOptions(?MockHandler $handler = null, int $retries = 0): array
 {
     $options = [
         'version' => 'latest',
@@ -285,7 +380,7 @@ function snsSqsClientOptions(?MockHandler $handler = null): array
         'endpoint' => 'http://localhost:4566',
         'credentials' => false,
         'md5' => false,
-        'retries' => 0,
+        'retries' => $retries,
     ];
 
     if ($handler instanceof MockHandler) {
@@ -299,6 +394,7 @@ function snsSqsDriver(
     MockHandler $snsHandler,
     ?MockHandler $sqsHandler = null,
     bool $fifo = true,
+    int $sqsRetries = 0,
 ): SnsSqsDriver {
     config()->set('spoolrail.prefix', 'warehouse');
 
@@ -317,7 +413,7 @@ function snsSqsDriver(
     return new SnsSqsDriver(
         $config,
         new SnsClient(snsSqsClientOptions($snsHandler)),
-        new SqsClient(snsSqsClientOptions($sqsHandler ?? new MockHandler)),
+        new SqsClient(snsSqsClientOptions($sqsHandler ?? new MockHandler, $sqsRetries)),
         Mockery::mock(CanManageTopology::class),
         app(OwnershipPrefix::class),
         $subscriptions,

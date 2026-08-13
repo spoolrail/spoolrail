@@ -6,6 +6,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Request;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
 use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\ManagementClient;
 use Spoolrail\Spoolrail\RabbitMq\Topology;
@@ -175,6 +176,51 @@ test('rejects broker metadata without a version before planning any mutations', 
     $http->assertNotSent(
         static fn (Request $request): bool => $request->method() !== 'GET',
     );
+});
+
+test('requests a topology retry when RabbitMQ discovery is rate limited', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'GET overview' => [[], 429],
+    ]);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $topology->planSync([rabbitMqSubscription()], 'application-a');
+    } catch (TopologySyncRequiresRetryException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught?->getPrevious())->toBeInstanceOf(RabbitMqManagementException::class);
+    expect($caught?->getPrevious()?->status)->toBe(429);
+    expect($http->recorded())->toHaveCount(1);
+});
+
+test('requests a topology retry when RabbitMQ discovery loses its response', function (): void {
+    // --- Arrange ---
+    $http = new Factory;
+    $http->fake([
+        '*' => Factory::failedConnection('Connection reset.'),
+    ]);
+    $config = new ConnectionConfig('events', []);
+    $topology = new Topology($config, new ManagementClient($config, $http));
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $topology->planSync([rabbitMqSubscription()], 'application-a');
+    } catch (TopologySyncRequiresRetryException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught?->getPrevious())->toBeInstanceOf(RabbitMqManagementException::class);
+    expect($caught?->getPrevious()?->getPrevious()?->getMessage())->toContain('Connection reset.');
+    expect($http->recorded())->toHaveCount(1);
 });
 
 test('rejects an existing transient queue', function (): void {
@@ -645,6 +691,26 @@ test('shares one topic exchange while keeping application queue namespaces disti
         static fn (Request $request): bool => $request->method() === 'POST'
             && str_ends_with($request->url(), '/api/bindings/%2F/e/orders/q/application-b-warehouse'),
     );
+});
+
+test('does not retry a rate-limited destructive topology request', function (): void {
+    // --- Arrange ---
+    [$topology, $http] = rabbitMqTopology([
+        'DELETE queues/%2F/warehouse-orders' => [[], 429],
+    ]);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $topology->deleteSubscription('warehouse-orders');
+    } catch (RabbitMqManagementException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught?->status)->toBe(429);
+    expect($http->recorded())->toHaveCount(1);
 });
 
 test('refuses to delete a missing topic', function (): void {
