@@ -274,24 +274,21 @@ class SpoolrailManager
         }
 
         $connectionConfig = new SnsSqsConnectionConfig($connectionName, $config);
-        $clientOptions = $connectionConfig->clientOptions();
-        $sns = new SnsClient([
-            ...$clientOptions,
-            'retries' => 0,
-        ]);
-        $sqs = new SqsClient($clientOptions);
+        $singleAttemptClientOptions = $connectionConfig->singleAttemptClientOptions();
+        $singleAttemptSns = new SnsClient($singleAttemptClientOptions);
+        $consumerSqs = new SqsClient($connectionConfig->clientOptions());
         $topology = new SnsSqsTopology(
             $connectionConfig,
-            $sns,
-            $sqs,
-            new StsClient($clientOptions),
+            $singleAttemptSns,
+            new SqsClient($singleAttemptClientOptions),
+            new StsClient($singleAttemptClientOptions),
             new SnsSqsQueuePolicy,
         );
 
         return new SnsSqsDriver(
             $connectionConfig,
-            $sns,
-            $sqs,
+            $singleAttemptSns,
+            $consumerSqs,
             $topology,
             $this->app->make(OwnershipPrefix::class),
             $this->app->make(SubscriptionRegistry::class),

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\RabbitMq;
 
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
+use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
 
 class PendingTopology implements TopologyPlan
 {
@@ -22,16 +24,24 @@ class PendingTopology implements TopologyPlan
 
     public function apply(): void
     {
-        foreach ($this->exchanges as $exchange) {
-            $this->managementClient->declareExchange($exchange);
-        }
+        try {
+            foreach ($this->exchanges as $exchange) {
+                $this->managementClient->declareExchange($exchange);
+            }
 
-        foreach ($this->queues as $queue) {
-            $this->managementClient->declareQueue($queue['name'], $queue['arguments']);
-        }
+            foreach ($this->queues as $queue) {
+                $this->managementClient->declareQueue($queue['name'], $queue['arguments']);
+            }
 
-        foreach ($this->bindings as $binding) {
-            $this->managementClient->bindQueue($binding['exchange'], $binding['queue']);
+            foreach ($this->bindings as $binding) {
+                $this->managementClient->bindQueue($binding['exchange'], $binding['queue']);
+            }
+        } catch (RabbitMqManagementException $exception) {
+            if ($exception->shouldRetry()) {
+                throw TopologySyncRequiresRetryException::afterFailure($exception);
+            }
+
+            throw $exception;
         }
     }
 }

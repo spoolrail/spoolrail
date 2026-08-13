@@ -3,16 +3,190 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Sleep;
 use Spoolrail\Spoolrail\Connection;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\Driver;
+use Spoolrail\Spoolrail\Enums\PublicationOutcome;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
+use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\TransportContext;
 
 afterEach(function (): void {
     CarbonImmutable::setTestNow();
+    Sleep::fake(false);
+});
+
+test('retries the same prepared publication', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.publisher_retries', [
+        'times' => 2,
+        'delay_milliseconds' => 25,
+    ]);
+    Sleep::fake();
+    CarbonImmutable::setTestNow('2026-07-15 14:23:08.417999 UTC');
+
+    $attempts = [];
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')
+        ->times(3)
+        ->andReturnUsing(function (string $topic, string $body, array $headers, ?string $orderingKey) use (&$attempts): void {
+            $attempts[] = [$topic, $body, $headers, $orderingKey];
+
+            if (count($attempts) === 1) {
+                throw PublicationException::notSent(new RuntimeException('Connection refused.'));
+            }
+
+            if (count($attempts) === 2) {
+                throw new RuntimeException('Transient driver failure.');
+            }
+        });
+    $connection = new Connection($driver, new MessageEnvelope);
+    $message = Message::make('order.created', ['reference' => 'A-42']);
+
+    // --- Act ---
+    $published = $connection->publish(
+        'orders',
+        $message,
+        ['correlation-id' => 'A-42'],
+        'order:42',
+    );
+
+    // --- Assert ---
+    expect($published->id)->toBe($message->id);
+    expect($attempts)->toHaveCount(3);
+    expect($attempts[1])->toBe($attempts[0]);
+    expect($attempts[2])->toBe($attempts[0]);
+    Sleep::assertSequence([
+        Sleep::for(25)->milliseconds(),
+        Sleep::for(25)->milliseconds(),
+    ]);
+});
+
+test('does not retry an explicit publication rejection', function (): void {
+    // --- Arrange ---
+    Sleep::fake();
+    $failure = PublicationException::rejected();
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')->once()->andThrow($failure);
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $connection->publish('orders', Message::make('order.created', []));
+    } catch (Throwable $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught)->toBe($failure);
+    Sleep::assertNeverSlept();
+});
+
+test('allows publication retries to be disabled', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.publisher_retries.times', 0);
+    $failure = PublicationException::notSent(new RuntimeException('Connection refused.'));
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')->once()->andThrow($failure);
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $connection->publish('orders', Message::make('order.created', []));
+    } catch (PublicationException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught)->toBe($failure);
+});
+
+test('rejects an invalid publisher retry setting before broker I/O', function (string $setting, mixed $value): void {
+    config()->set("spoolrail.publisher_retries.$setting", $value);
+    $driver = Mockery::mock(Driver::class);
+    $driver->shouldNotReceive('publish');
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    expect(fn (): Message => $connection->publish('orders', Message::make('order.created', [])))
+        ->toThrow(
+            InvalidArgumentException::class,
+            "Spoolrail publisher retry setting [$setting] must be a non-negative integer.",
+        );
+})->with([
+    'negative retry count' => ['times', -1],
+    'non-integer delay' => ['delay_milliseconds', '1000'],
+]);
+
+test('retains an unknown outcome when a later attempt conclusively fails', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.publisher_retries', [
+        'times' => 1,
+        'delay_milliseconds' => 0,
+    ]);
+    $ambiguous = PublicationException::outcomeUnknown(new RuntimeException('Response lost.'));
+    $rejected = PublicationException::rejected();
+    $attempt = 0;
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')
+        ->twice()
+        ->andReturnUsing(function () use (&$attempt, $ambiguous, $rejected): never {
+            $attempt++;
+
+            throw $attempt === 1 ? $ambiguous : $rejected;
+        });
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $connection->publish('orders', Message::make('order.created', []));
+    } catch (PublicationException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught)->toBe($ambiguous);
+    expect($caught?->outcome)->toBe(PublicationOutcome::Unknown);
+});
+
+test('reports the final conclusive failure after retries are exhausted', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.publisher_retries', [
+        'times' => 1,
+        'delay_milliseconds' => 0,
+    ]);
+    $firstFailure = PublicationException::notSent(new RuntimeException('Connection refused.'));
+    $finalFailure = PublicationException::notSent(new RuntimeException('Service unavailable.'));
+    $attempt = 0;
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')
+        ->twice()
+        ->andReturnUsing(function () use (&$attempt, $firstFailure, $finalFailure): never {
+            $attempt++;
+
+            throw $attempt === 1 ? $firstFailure : $finalFailure;
+        });
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $connection->publish('orders', Message::make('order.created', []));
+    } catch (PublicationException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught)->toBe($finalFailure);
 });
 
 test('closes a driver that owns external resources', function (): void {

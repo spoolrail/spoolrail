@@ -11,6 +11,7 @@ use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqManagementException;
 use Spoolrail\Spoolrail\Exceptions\RabbitMqTopologyException;
 use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
 
 test('keeps package exceptions within caller-relevant SPL catch boundaries', function (string $exception, string $splException): void {
     expect(is_a($exception, $splException, true))->toBeTrue();
@@ -24,4 +25,5 @@ test('keeps package exceptions within caller-relevant SPL catch boundaries', fun
     'RabbitMQ Management API failure' => [RabbitMqManagementException::class, RuntimeException::class],
     'RabbitMQ topology failure' => [RabbitMqTopologyException::class, RuntimeException::class],
     'topology preflight failure' => [TopologyPreflightException::class, RuntimeException::class],
+    'topology retry request' => [TopologySyncRequiresRetryException::class, RuntimeException::class],
 ]);

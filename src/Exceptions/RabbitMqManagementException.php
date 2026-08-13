@@ -55,4 +55,13 @@ class RabbitMqManagementException extends RuntimeException implements SpoolrailE
             "RabbitMQ connection [$connectionName] Management API returned an invalid response while $operation.",
         );
     }
+
+    public function shouldRetry(): bool
+    {
+        if ($this->status === null) {
+            return $this->getPrevious() instanceof Throwable;
+        }
+
+        return in_array($this->status, [408, 429], true) || $this->status >= 500;
+    }
 }

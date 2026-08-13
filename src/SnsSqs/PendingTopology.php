@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\SnsSqs;
 
+use Aws\Exception\AwsException;
+use Aws\Result;
 use Aws\Sns\SnsClient;
 use Aws\Sqs\SqsClient;
+use Closure;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\SnsSqsTopologyException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
+use Throwable;
 
 class PendingTopology implements TopologyPlan
 {
@@ -119,10 +124,13 @@ class PendingTopology implements TopologyPlan
     private function createTopics(): void
     {
         foreach ($this->topics as $topic) {
-            $createdArn = $this->sns->createTopic([
-                'Name' => $topic['name'],
-                'Attributes' => $topic['attributes'],
-            ])->get('TopicArn');
+            $createdArn = $this->applyRequest(
+                "creating SNS topic [{$topic['name']}]",
+                fn (): Result => $this->sns->createTopic([
+                    'Name' => $topic['name'],
+                    'Attributes' => $topic['attributes'],
+                ]),
+            )->get('TopicArn');
 
             if ($createdArn !== $topic['arn']) {
                 throw SnsSqsTopologyException::unexpectedCreatedResource(
@@ -136,33 +144,65 @@ class PendingTopology implements TopologyPlan
     private function createQueues(): void
     {
         foreach ($this->queues as $queue) {
-            $this->sqs->createQueue([
-                'QueueName' => $queue['name'],
-                'Attributes' => $queue['attributes'],
-            ]);
+            $this->applyRequest(
+                "creating SQS queue [{$queue['name']}]",
+                fn (): Result => $this->sqs->createQueue([
+                    'QueueName' => $queue['name'],
+                    'Attributes' => $queue['attributes'],
+                ]),
+            );
         }
     }
 
     private function updateQueuePolicies(): void
     {
         foreach ($this->queuePolicies as $policy) {
-            $this->sqs->setQueueAttributes([
-                'QueueUrl' => $policy['url'],
-                'Attributes' => ['Policy' => $policy['policy']],
-            ]);
+            $this->applyRequest(
+                "updating SQS queue [{$policy['url']}]",
+                fn (): Result => $this->sqs->setQueueAttributes([
+                    'QueueUrl' => $policy['url'],
+                    'Attributes' => ['Policy' => $policy['policy']],
+                ]),
+            );
         }
     }
 
     private function createSubscriptions(): void
     {
         foreach ($this->subscriptions as $subscription) {
-            $this->sns->subscribe([
-                'TopicArn' => $subscription['topic_arn'],
-                'Protocol' => 'sqs',
-                'Endpoint' => $subscription['queue_arn'],
-                'Attributes' => ['RawMessageDelivery' => 'true'],
-                'ReturnSubscriptionArn' => true,
-            ]);
+            $this->applyRequest(
+                "subscribing SQS queue [{$subscription['queue_arn']}] to SNS topic [{$subscription['topic_arn']}]",
+                fn (): Result => $this->sns->subscribe([
+                    'TopicArn' => $subscription['topic_arn'],
+                    'Protocol' => 'sqs',
+                    'Endpoint' => $subscription['queue_arn'],
+                    'Attributes' => ['RawMessageDelivery' => 'true'],
+                    'ReturnSubscriptionArn' => true,
+                ]),
+            );
+        }
+    }
+
+    /**
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $request
+     * @return TResult
+     */
+    private function applyRequest(string $operation, Closure $request): mixed
+    {
+        try {
+            return $request();
+        } catch (AwsException $exception) {
+            $failure = SnsSqsTopologyException::operationFailed($operation, $exception);
+
+            if ($failure->shouldRetry()) {
+                throw TopologySyncRequiresRetryException::afterFailure($failure);
+            }
+
+            throw $failure;
+        } catch (Throwable $exception) {
+            throw SnsSqsTopologyException::operationFailed($operation, $exception);
         }
     }
 }

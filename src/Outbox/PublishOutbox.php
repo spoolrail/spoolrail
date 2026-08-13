@@ -168,6 +168,10 @@ class PublishOutbox
 
     private function failureSummary(Throwable $exception): string
     {
+        while ($exception->getPrevious() instanceof Throwable) {
+            $exception = $exception->getPrevious();
+        }
+
         $message = trim((string) preg_replace('/\s+/u', ' ', mb_scrub($exception->getMessage())));
 
         return Str::limit($message !== '' ? $message : $exception::class, 500, '');

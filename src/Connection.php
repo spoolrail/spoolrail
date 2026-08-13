@@ -6,14 +6,19 @@ namespace Spoolrail\Spoolrail;
 
 use Carbon\CarbonImmutable;
 use Closure;
+use Illuminate\Support\Sleep;
 use InvalidArgumentException;
 use LogicException;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
+use Spoolrail\Spoolrail\Enums\PublicationOutcome;
+use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
+use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Outbox\OutboxPublication;
 use Spoolrail\Spoolrail\Topology\LogicalName;
+use Throwable;
 
 class Connection
 {
@@ -85,7 +90,7 @@ class Connection
                 'last_error' => null,
             ]);
         } else {
-            $this->driver()->publish($topic, $body, $headers, $orderingKey);
+            $this->publishToBroker($topic, $body, $headers, $orderingKey);
         }
 
         return $stampedMessage;
@@ -102,7 +107,72 @@ class Connection
         array $headers,
         ?string $orderingKey,
     ): void {
-        $this->driver()->publish($topic, $message, $headers, $orderingKey);
+        $this->publishToBroker($topic, $message, $headers, $orderingKey);
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    private function publishToBroker(
+        string $topic,
+        string $body,
+        array $headers,
+        ?string $orderingKey,
+    ): void {
+        $driver = $this->driver();
+        $retries = $this->publisherRetrySetting('times', 2);
+        $delayMilliseconds = $this->publisherRetrySetting('delay_milliseconds', 1000);
+        $unknownFailure = null;
+
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                $driver->publish($topic, $body, $headers, $orderingKey);
+
+                return;
+            } catch (Throwable $failure) {
+                $failure = $this->asPublicationException($failure);
+                $unknownFailure = $this->latestUnknownFailure($failure, $unknownFailure);
+
+                if ($this->shouldStopPublishing($failure, $attempt, $retries)) {
+                    throw $unknownFailure ?? $failure;
+                }
+
+                Sleep::for($delayMilliseconds)->milliseconds();
+            }
+        }
+    }
+
+    private function asPublicationException(Throwable $failure): PublicationException
+    {
+        return $failure instanceof PublicationException
+            ? $failure
+            : PublicationException::outcomeUnknown($failure);
+    }
+
+    private function shouldStopPublishing(
+        PublicationException $failure,
+        int $attempt,
+        int $retries,
+    ): bool {
+        return $failure->outcome === PublicationOutcome::Rejected || $attempt >= $retries;
+    }
+
+    private function latestUnknownFailure(
+        PublicationException $failure,
+        ?PublicationException $previousUnknown,
+    ): ?PublicationException {
+        return $failure->outcome === PublicationOutcome::Unknown ? $failure : $previousUnknown;
+    }
+
+    private function publisherRetrySetting(string $setting, int $default): int
+    {
+        $value = config("spoolrail.publisher_retries.$setting", $default);
+
+        if (! is_int($value) || $value < 0) {
+            throw InvalidConfigException::invalidPublisherRetrySetting($setting);
+        }
+
+        return $value;
     }
 
     /**

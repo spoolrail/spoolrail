@@ -10,6 +10,7 @@ use Aws\Sns\SnsClient;
 use Aws\Sqs\SqsClient;
 use Closure;
 use InvalidArgumentException;
+use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
@@ -166,11 +167,35 @@ class SnsSqsDriver implements CanManageTopology, Driver
 
     private function publicationFailure(AwsException $exception): PublicationException
     {
-        if (intdiv($exception->getStatusCode() ?? 0, 100) === 4) {
+        if ($this->publicationWasThrottled($exception)) {
+            return PublicationException::notSent($exception);
+        }
+
+        if ($this->publicationWasRejected($exception)) {
             return PublicationException::rejected($exception);
         }
 
         return PublicationException::outcomeUnknown($exception);
+    }
+
+    private function publicationWasThrottled(AwsException $exception): bool
+    {
+        $errorCode = (string) $exception->getAwsErrorCode();
+        if ($exception->getStatusCode() === 429) {
+            return true;
+        }
+        if (stripos($errorCode, 'throttl') !== false) {
+            return true;
+        }
+
+        return in_array($errorCode, ['RequestLimitExceeded', 'TooManyRequestsException'], true);
+    }
+
+    private function publicationWasRejected(AwsException $exception): bool
+    {
+        $status = $exception->getStatusCode();
+
+        return $status !== null && $status >= 400 && $status < 500 && $status !== 408;
     }
 
     private function queueUrl(string $queueName): string
@@ -195,14 +220,20 @@ class SnsSqsDriver implements CanManageTopology, Driver
 
     private function receive(string $queueUrl): ?Delivery
     {
+        $request = [
+            'QueueUrl' => $queueUrl,
+            'MaxNumberOfMessages' => 1,
+            'WaitTimeSeconds' => 20,
+            'AttributeNames' => ['All'],
+            'MessageAttributeNames' => ['All'],
+        ];
+
+        if ($this->config->fifo()) {
+            $request['ReceiveRequestAttemptId'] = Uuid::uuid4()->toString();
+        }
+
         try {
-            $messages = $this->sqs->receiveMessage([
-                'QueueUrl' => $queueUrl,
-                'MaxNumberOfMessages' => 1,
-                'WaitTimeSeconds' => 20,
-                'AttributeNames' => ['All'],
-                'MessageAttributeNames' => ['All'],
-            ])->get('Messages');
+            $messages = $this->sqs->receiveMessage($request)->get('Messages');
         } catch (Throwable $exception) {
             throw ConsumptionException::consumerStopped($exception);
         }

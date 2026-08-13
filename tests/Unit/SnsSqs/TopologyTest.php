@@ -11,6 +11,7 @@ use Aws\Sts\StsClient;
 use GuzzleHttp\Psr7\Response;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
 use Spoolrail\Spoolrail\Exceptions\SnsSqsTopologyException;
+use Spoolrail\Spoolrail\Exceptions\TopologySyncRequiresRetryException;
 use Spoolrail\Spoolrail\SnsSqs\ConnectionConfig;
 use Spoolrail\Spoolrail\SnsSqs\QueuePolicy;
 use Spoolrail\Spoolrail\SnsSqs\Topology;
@@ -403,6 +404,68 @@ test('refuses to create resources with credentials from the wrong owning account
     expect($snsHandler->getLastCommand()->getName())->toBe('GetTopicAttributes');
     expect($sqsHandler->getLastCommand()->getName())->toBe('ListQueues');
     expect($stsHandler->getLastCommand()->getName())->toBe('GetCallerIdentity');
+});
+
+test('requests a topology retry when AWS discovery is rate limited', function (): void {
+    // --- Arrange ---
+    $commandClient = new SqsClient(snsSqsTopologyClientOptions(new MockHandler));
+    $failure = new AwsException(
+        'Rate exceeded.',
+        $commandClient->getCommand('ListQueues'),
+        [
+            'response' => new Response(400),
+            'code' => 'ThrottlingException',
+        ],
+    );
+    $sqsHandler = new MockHandler([$failure]);
+    $topology = snsSqsTopology(
+        new SnsClient(snsSqsTopologyClientOptions(new MockHandler)),
+        $sqsHandler,
+        new MockHandler,
+    );
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $topology->planSync([snsSqsSubscription()], 'application-a');
+    } catch (TopologySyncRequiresRetryException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught?->getPrevious())->toBeInstanceOf(SnsSqsTopologyException::class);
+    expect($caught?->getPrevious()?->getPrevious())->toBe($failure);
+    expect(count($sqsHandler))->toBe(0);
+});
+
+test('requests a topology retry when AWS discovery loses its response', function (): void {
+    // --- Arrange ---
+    $commandClient = new SqsClient(snsSqsTopologyClientOptions(new MockHandler));
+    $failure = new AwsException(
+        'Connection reset.',
+        $commandClient->getCommand('ListQueues'),
+    );
+    $sqsHandler = new MockHandler([$failure]);
+    $topology = snsSqsTopology(
+        new SnsClient(snsSqsTopologyClientOptions(new MockHandler)),
+        $sqsHandler,
+        new MockHandler,
+    );
+
+    // --- Act ---
+    $caught = null;
+
+    try {
+        $topology->planSync([snsSqsSubscription()], 'application-a');
+    } catch (TopologySyncRequiresRetryException $exception) {
+        $caught = $exception;
+    }
+
+    // --- Assert ---
+    expect($caught?->getPrevious())->toBeInstanceOf(SnsSqsTopologyException::class);
+    expect($caught?->getPrevious()?->getPrevious())->toBe($failure);
+    expect(count($sqsHandler))->toBe(0);
 });
 
 /**

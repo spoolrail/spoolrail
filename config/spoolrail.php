@@ -88,6 +88,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Publisher Retries
+    |--------------------------------------------------------------------------
+    |
+    | Broker publication failures are retried this many times after the first
+    | attempt unless permanently rejected, with a fixed wait before each retry.
+    |
+    */
+
+    'publisher_retries' => [
+        'times' => 2,
+        'delay_milliseconds' => 1000,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Consumer Supervision
     |--------------------------------------------------------------------------
     |

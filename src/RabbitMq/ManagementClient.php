@@ -379,10 +379,8 @@ class ManagementClient
             'query' => $query,
         ]);
 
-        $pendingRequest = $this->pendingRequest();
-
         try {
-            $response = $pendingRequest->send($method, $path, $options);
+            $response = $this->pendingRequest()->send($method, $path, $options);
         } catch (Throwable $exception) {
             throw RabbitMqManagementException::requestFailed(
                 $this->config->connectionName,
