@@ -52,8 +52,12 @@ class Connection
     /**
      * @param  array<string, string>  $headers
      */
-    public function publish(string $topic, Message $message, array $headers = []): Message
-    {
+    public function publish(
+        string $topic,
+        Message $message,
+        array $headers = [],
+        ?string $orderingKey = null,
+    ): Message {
         if (! LogicalName::isValidTopic($topic)) {
             throw new InvalidArgumentException(
                 "Topic [$topic] must contain between 3 and 251 ASCII characters, begin with a letter, otherwise contain only letters, digits, hyphens, and underscores, and avoid transport-reserved beginnings.",
@@ -61,6 +65,7 @@ class Connection
         }
 
         $this->ensureHeadersArePortable($headers);
+        $this->ensureOrderingKeyIsPortable($orderingKey);
 
         $stampedMessage = $message->withPublishedAt(CarbonImmutable::now('UTC'));
         $body = $this->envelope->encode($stampedMessage);
@@ -76,10 +81,11 @@ class Connection
                 'topic' => $topic,
                 'message' => $this->envelope->toArray($stampedMessage),
                 'headers' => $headers,
+                'ordering_key' => $orderingKey,
                 'last_error' => null,
             ]);
         } else {
-            $this->driver()->publish($topic, $body, $headers);
+            $this->driver()->publish($topic, $body, $headers, $orderingKey);
         }
 
         return $stampedMessage;
@@ -90,9 +96,13 @@ class Connection
      *
      * @param  array<string, string>  $headers
      */
-    public function publishStored(string $topic, string $message, array $headers): void
-    {
-        $this->driver()->publish($topic, $message, $headers);
+    public function publishStored(
+        string $topic,
+        string $message,
+        array $headers,
+        ?string $orderingKey,
+    ): void {
+        $this->driver()->publish($topic, $message, $headers, $orderingKey);
     }
 
     /**
@@ -171,6 +181,19 @@ class Connection
         if (strlen($value) > self::MAX_HEADER_VALUE_BYTES) {
             throw new InvalidArgumentException(
                 "Message header [$key] exceeds the 1024-byte value limit.",
+            );
+        }
+    }
+
+    private function ensureOrderingKeyIsPortable(?string $orderingKey): void
+    {
+        if ($orderingKey === null) {
+            return;
+        }
+
+        if (preg_match('/\A[\x21-\x7E]{1,128}\z/', $orderingKey) !== 1) {
+            throw new InvalidArgumentException(
+                'The ordering key must contain between 1 and 128 printable ASCII characters without spaces.',
             );
         }
     }

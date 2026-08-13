@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+use Aws\AwsClient;
+use Aws\AwsClientInterface;
+use Aws\Sns\SnsClient;
+use Aws\Sqs\SqsClient;
+use Aws\Sts\StsClient;
 use Spoolrail\Spoolrail\Exceptions\SpoolrailException;
 
 arch('no debugging')
@@ -26,5 +31,11 @@ arch('keeps transport-neutral layers independent of concrete transports')
     ->not->toUse([
         'Spoolrail\Spoolrail\Drivers',
         'Spoolrail\Spoolrail\RabbitMq',
+        'Spoolrail\Spoolrail\SnsSqs',
         'PhpAmqpLib',
+        AwsClient::class,
+        AwsClientInterface::class,
+        SnsClient::class,
+        SqsClient::class,
+        StsClient::class,
     ]);

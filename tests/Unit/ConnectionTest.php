@@ -21,7 +21,12 @@ test('closes a driver that owns external resources', function (): void {
     {
         public bool $closed = false;
 
-        public function publish(string $topic, string $body, array $headers): void {}
+        public function publish(
+            string $topic,
+            string $body,
+            array $headers,
+            ?string $orderingKey = null,
+        ): void {}
 
         public function consume(string $subscription, Closure $handoff): void {}
 
@@ -93,7 +98,7 @@ test('clears inbound transport context from a newly published copy', function ()
     $driver = Mockery::mock(Driver::class);
     $driver->expects('publish')
         ->once()
-        ->with('returns', Mockery::type('string'), []);
+        ->with('returns', Mockery::type('string'), [], null);
     $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---
@@ -104,6 +109,59 @@ test('clears inbound transport context from a newly published copy', function ()
     expect($republished->id)->toBe($received->id);
     expect($republished->transport)->toBeNull();
 });
+
+test('passes a portable ordering key through the raw driver', function (): void {
+    // --- Arrange ---
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')
+        ->once()
+        ->with('orders', Mockery::type('string'), [], 'order:42');
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $connection->publish(
+        'orders',
+        Message::make('order.created', []),
+        orderingKey: 'order:42',
+    );
+});
+
+test('accepts an ordering key at the 128-character portable limit', function (): void {
+    // --- Arrange ---
+    $orderingKey = str_repeat('o', 128);
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')
+        ->once()
+        ->with('orders', Mockery::type('string'), [], $orderingKey);
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $connection->publish(
+        'orders',
+        Message::make('order.created', []),
+        orderingKey: $orderingKey,
+    );
+});
+
+test('rejects a non-portable ordering key before driver I/O', function (string $orderingKey): void {
+    $driver = Mockery::mock(Driver::class);
+    $driver->shouldNotReceive('publish');
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    expect(fn (): Message => $connection->publish(
+        'orders',
+        Message::make('order.created', []),
+        orderingKey: $orderingKey,
+    ))->toThrow(
+        InvalidArgumentException::class,
+        'The ordering key must contain between 1 and 128 printable ASCII characters without spaces.',
+    );
+})->with([
+    'empty' => '',
+    'space' => 'order 42',
+    'non-ASCII' => 'order:é',
+    'over 128 characters' => str_repeat('o', 129),
+]);
 
 test('restamps repeated publications of the same logical message', function (): void {
     // --- Arrange ---
@@ -210,7 +268,7 @@ test('accepts ten headers at their portable key and value boundaries', function 
     $driver = Mockery::mock(Driver::class);
     $driver->expects('publish')
         ->once()
-        ->with('orders', Mockery::type('string'), $headers);
+        ->with('orders', Mockery::type('string'), $headers, null);
     $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---
@@ -302,7 +360,7 @@ test('accepts a topic at the portable limit and rejects the next character befor
     $topicAtLimit = 't'.str_repeat('o', 250);
     $topicOverLimit = "{$topicAtLimit}o";
     $driver = Mockery::mock(Driver::class);
-    $driver->expects('publish')->once()->with($topicAtLimit, Mockery::type('string'), []);
+    $driver->expects('publish')->once()->with($topicAtLimit, Mockery::type('string'), [], null);
     $connection = new Connection($driver, new MessageEnvelope);
 
     // --- Act ---

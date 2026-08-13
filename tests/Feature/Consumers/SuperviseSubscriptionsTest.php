@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Spoolrail\Spoolrail\Contracts\MessageHandler;
 use Spoolrail\Spoolrail\Exceptions\ConsumerException;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
@@ -10,9 +9,10 @@ use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\ConsumerSupervisor;
 use Spoolrail\Spoolrail\Subscriptions\StartSubscriptionProcess;
 use Spoolrail\Spoolrail\Subscriptions\TerminationSignal;
+use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 beforeEach(function (): void {
-    RecordingMessageHandler::$messages = [];
+    RecordingMessageHandler::reset();
 });
 
 test('supervises every active subscription on the default connection', function (): void {
@@ -154,14 +154,3 @@ test('preflights lazy driver configuration before process supervision', function
     expect(fn () => $this->artisan('spoolrail event-orders')->run())
         ->toThrow(InvalidConfigException::class, 'setting [scheme] must be [amqp] or [amqps]');
 });
-
-class RecordingMessageHandler implements MessageHandler
-{
-    /** @var list<Message> */
-    public static array $messages = [];
-
-    public function handle(Message $message): void
-    {
-        self::$messages[] = $message;
-    }
-}

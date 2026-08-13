@@ -43,17 +43,17 @@ If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-de
 
 > Mutation testing and coverage commands require Xdebug in coverage mode or enabled PCOV.
 
-| Command                  | Purpose                                             |
-| ------------------------ | --------------------------------------------------- |
-| `composer test`          | Run the default suite, including RabbitMQ coverage. |
-| `composer format`        | Run Laravel Pint and Prettier formatting.           |
-| `composer format:check`  | Check Laravel Pint and Prettier formatting.         |
-| `composer analyse`       | Run static analysis (`phpstan`).                    |
-| `composer refactor`      | Apply Rector refactors.                             |
-| `composer mutate`        | Run mutation testing across the package.            |
-| `composer mutate:herd`   | Run mutation testing via Laravel Herd tooling.      |
-| `composer coverage`      | Run tests with local coverage (`pest --coverage`).  |
-| `composer coverage:herd` | Run coverage via Laravel Herd tooling.              |
+| Command                  | Purpose                                            |
+| ------------------------ | -------------------------------------------------- |
+| `composer test`          | Run the default suite.                             |
+| `composer format`        | Run Laravel Pint and Prettier formatting.          |
+| `composer format:check`  | Check Laravel Pint and Prettier formatting.        |
+| `composer analyse`       | Run static analysis (`phpstan`).                   |
+| `composer refactor`      | Apply Rector refactors.                            |
+| `composer mutate`        | Run mutation testing across the package.           |
+| `composer mutate:herd`   | Run mutation testing via Laravel Herd tooling.     |
+| `composer coverage`      | Run tests with local coverage (`pest --coverage`). |
+| `composer coverage:herd` | Run coverage via Laravel Herd tooling.             |
 
 ## Testing Lower Dependency Versions
 

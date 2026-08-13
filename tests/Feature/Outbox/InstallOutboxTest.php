@@ -17,6 +17,7 @@ test('creates the published outbox storage contract', function (): void {
         'topic',
         'message',
         'headers',
+        'ordering_key',
         'last_error',
         'created_at',
         'updated_at',

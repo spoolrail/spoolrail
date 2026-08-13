@@ -19,6 +19,7 @@ use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
  *     published_at: string
  * } $message
  * @property array<string, string> $headers
+ * @property string|null $ordering_key
  * @property string|null $last_error
  */
 class OutboxPublication extends Model

@@ -15,7 +15,12 @@ interface Driver
      *
      * @throws PublicationException
      */
-    public function publish(string $topic, string $body, array $headers): void;
+    public function publish(
+        string $topic,
+        string $body,
+        array $headers,
+        ?string $orderingKey = null,
+    ): void;
 
     /**
      * The driver retains its native receipt while invoking the handoff with the serialized body.

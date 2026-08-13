@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail;
 
+use Aws\Sns\SnsClient;
+use Aws\Sqs\SqsClient;
+use Aws\Sts\StsClient;
 use Closure;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\BindingResolutionException;
@@ -14,11 +17,15 @@ use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
+use Spoolrail\Spoolrail\Drivers\SnsSqsDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\Connector;
 use Spoolrail\Spoolrail\RabbitMq\ManagementClient;
 use Spoolrail\Spoolrail\RabbitMq\Topology;
+use Spoolrail\Spoolrail\SnsSqs\ConnectionConfig as SnsSqsConnectionConfig;
+use Spoolrail\Spoolrail\SnsSqs\QueuePolicy as SnsSqsQueuePolicy;
+use Spoolrail\Spoolrail\SnsSqs\Topology as SnsSqsTopology;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
@@ -129,7 +136,7 @@ class SpoolrailManager
         $driverName = $this->driverNameFrom($connectionName, $connectionConfig);
         $creator = $this->customCreators[$driverName] ?? null;
 
-        if (! $creator instanceof Closure && ! in_array($driverName, ['array', 'rabbitmq'], true)) {
+        if (! $creator instanceof Closure && ! in_array($driverName, ['array', 'rabbitmq', 'snssqs'], true)) {
             throw InvalidConfigException::unsupportedDriver($driverName);
         }
 
@@ -180,6 +187,7 @@ class SpoolrailManager
         return match ($driverName) {
             'array' => $this->createArrayDriver($connectionName),
             'rabbitmq' => $this->createRabbitMqDriver($connectionName, $connectionConfig),
+            'snssqs' => $this->createSnsSqsDriver($connectionName, $connectionConfig),
             default => throw InvalidConfigException::unsupportedDriver($driverName),
         };
     }
@@ -251,6 +259,42 @@ class SpoolrailManager
             new Connector,
             new Topology($connectionConfig, $managementClient),
             $this->app->make(OwnershipPrefix::class),
+        );
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $config
+     */
+    private function createSnsSqsDriver(string $connectionName, array $config): SnsSqsDriver
+    {
+        if (! class_exists(SnsClient::class)) {
+            throw new LogicException(
+                'The AWS SNS/SQS driver requires aws/aws-sdk-php:^3.392.0. Install it in the application before selecting this driver.',
+            );
+        }
+
+        $connectionConfig = new SnsSqsConnectionConfig($connectionName, $config);
+        $clientOptions = $connectionConfig->clientOptions();
+        $sns = new SnsClient([
+            ...$clientOptions,
+            'retries' => 0,
+        ]);
+        $sqs = new SqsClient($clientOptions);
+        $topology = new SnsSqsTopology(
+            $connectionConfig,
+            $sns,
+            $sqs,
+            new StsClient($clientOptions),
+            new SnsSqsQueuePolicy,
+        );
+
+        return new SnsSqsDriver(
+            $connectionConfig,
+            $sns,
+            $sqs,
+            $topology,
+            $this->app->make(OwnershipPrefix::class),
+            $this->app->make(SubscriptionRegistry::class),
         );
     }
 }

@@ -134,6 +134,7 @@ class PublishOutbox
                 $publication->topic,
                 json_encode($publication->message, JSON_THROW_ON_ERROR),
                 $publication->headers,
+                $publication->ordering_key,
             );
         } catch (Throwable $exception) {
             $failure = $exception instanceof PublicationException

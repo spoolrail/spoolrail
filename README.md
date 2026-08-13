@@ -13,8 +13,8 @@ Better documentation coming soon once the first 3 planned drivers for 1.0 are ou
 ## Supported Drivers
 
 - 🐇 RabbitMQ
+- 📦 AWS SNS/SQS
 - ☁️ Google Pub/Sub (coming soon)
-- 📦 AWS SNS/SQS (coming soon)
 
 ## Why a Message Broker?
 
