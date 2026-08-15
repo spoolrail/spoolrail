@@ -16,7 +16,7 @@ test('warns when another managed connection is not inspected', function (): void
 
     // --- Act ---
     $exitCode = $this->artisan('spoolrail:delete-undeclared-subscriptions')
-        ->expectsOutputToContain('Other potentially managed connections were not inspected: snssqs, secondary.')
+        ->expectsOutputToContain('Other potentially managed connections were not inspected: snssqs, pubsub, secondary.')
         ->run();
 
     // --- Assert ---

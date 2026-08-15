@@ -7,6 +7,7 @@ use Aws\AwsClientInterface;
 use Aws\Sns\SnsClient;
 use Aws\Sqs\SqsClient;
 use Aws\Sts\StsClient;
+use Google\Cloud\PubSub\PubSubClient;
 use Spoolrail\Spoolrail\Exceptions\SpoolrailException;
 
 arch('no debugging')
@@ -32,10 +33,12 @@ arch('keeps transport-neutral layers independent of concrete transports')
         'Spoolrail\Spoolrail\Drivers',
         'Spoolrail\Spoolrail\RabbitMq',
         'Spoolrail\Spoolrail\SnsSqs',
+        'Spoolrail\Spoolrail\PubSub',
         'PhpAmqpLib',
         AwsClient::class,
         AwsClientInterface::class,
         SnsClient::class,
         SqsClient::class,
         StsClient::class,
+        PubSubClient::class,
     ]);

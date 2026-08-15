@@ -40,7 +40,7 @@ return [
     | Here you may configure every Spoolrail connection used by your application.
     | The in-process "array" driver is intended for tests and local simulation.
     |
-    | Supported drivers: "array", "rabbitmq", "snssqs"
+    | Supported drivers: "array", "rabbitmq", "snssqs", "pubsub"
     |
     */
 
@@ -82,6 +82,15 @@ return [
             'fifo' => true,
             'connection_timeout' => 3,
             'request_timeout' => 60,
+        ],
+
+        'pubsub' => [
+            'driver' => 'pubsub',
+            'project_id' => env('GOOGLE_CLOUD_PROJECT'),
+            'credentials' => env('SPOOLRAIL_GOOGLE_CREDENTIALS'),
+            'endpoint' => env('SPOOLRAIL_GOOGLE_PUBSUB_ENDPOINT'),
+            'message_ordering' => true,
+            'exactly_once' => true,
         ],
 
     ],

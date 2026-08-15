@@ -45,5 +45,8 @@
         <env name="AWS_SECRET_ACCESS_KEY" value="test"/>
         <env name="AWS_ACCOUNT_ID" value="000000000000"/>
         <env name="SPOOLRAIL_AWS_ENDPOINT" value="http://127.0.0.1:4566"/>
+        <env name="GOOGLE_CLOUD_PROJECT" value="spoolrail"/>
+        <env name="SPOOLRAIL_GOOGLE_CREDENTIALS" value="/run/secrets/spoolrail-pubsub.json"/>
+        <env name="PUBSUB_EMULATOR_HOST" value="127.0.0.1:8085"/>
     </php>
 </phpunit>
