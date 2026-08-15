@@ -6,15 +6,13 @@ Message broker library made native to Laravel for building resilient distributed
 
 ## Documentation
 
-See [spoolrail/docs](https://github.com/spoolrail/docs/blob/main/index.md).
-
-Better documentation coming soon once the first 3 planned drivers for 1.0 are out the door (see below).
+See [spoolrail/docs](https://github.com/spoolrail/docs/blob/main/index.md). Better documentation coming soon.
 
 ## Supported Drivers
 
 - 🐇 RabbitMQ
 - 📦 AWS SNS/SQS
-- ☁️ Google Pub/Sub (coming soon)
+- ☁️ Google Pub/Sub
 
 ## Why a Message Broker?
 

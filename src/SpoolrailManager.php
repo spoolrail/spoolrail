@@ -8,6 +8,7 @@ use Aws\Sns\SnsClient;
 use Aws\Sqs\SqsClient;
 use Aws\Sts\StsClient;
 use Closure;
+use Google\Cloud\PubSub\PubSubClient;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Foundation\Application;
@@ -16,9 +17,12 @@ use LogicException;
 use PhpAmqpLib\Connection\AMQPConnectionConfig;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
+use Spoolrail\Spoolrail\Drivers\PubSubDriver;
 use Spoolrail\Spoolrail\Drivers\RabbitMqDriver;
 use Spoolrail\Spoolrail\Drivers\SnsSqsDriver;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
+use Spoolrail\Spoolrail\PubSub\ConnectionConfig as PubSubConnectionConfig;
+use Spoolrail\Spoolrail\PubSub\Topology as PubSubTopology;
 use Spoolrail\Spoolrail\RabbitMq\ConnectionConfig;
 use Spoolrail\Spoolrail\RabbitMq\Connector;
 use Spoolrail\Spoolrail\RabbitMq\ManagementClient;
@@ -136,7 +140,7 @@ class SpoolrailManager
         $driverName = $this->driverNameFrom($connectionName, $connectionConfig);
         $creator = $this->customCreators[$driverName] ?? null;
 
-        if (! $creator instanceof Closure && ! in_array($driverName, ['array', 'rabbitmq', 'snssqs'], true)) {
+        if (! $creator instanceof Closure && ! in_array($driverName, ['array', 'rabbitmq', 'snssqs', 'pubsub'], true)) {
             throw InvalidConfigException::unsupportedDriver($driverName);
         }
 
@@ -188,6 +192,7 @@ class SpoolrailManager
             'array' => $this->createArrayDriver($connectionName),
             'rabbitmq' => $this->createRabbitMqDriver($connectionName, $connectionConfig),
             'snssqs' => $this->createSnsSqsDriver($connectionName, $connectionConfig),
+            'pubsub' => $this->createPubSubDriver($connectionName, $connectionConfig),
             default => throw InvalidConfigException::unsupportedDriver($driverName),
         };
     }
@@ -290,6 +295,30 @@ class SpoolrailManager
             $singleAttemptSns,
             $consumerSqs,
             $topology,
+            $this->app->make(OwnershipPrefix::class),
+            $this->app->make(SubscriptionRegistry::class),
+        );
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $config
+     */
+    private function createPubSubDriver(string $connectionName, array $config): PubSubDriver
+    {
+        if (! class_exists(PubSubClient::class)) {
+            throw new LogicException(
+                'The Google Pub/Sub driver requires google/cloud-pubsub:^2.20.0. Install it in the application before selecting this driver.',
+            );
+        }
+
+        $connectionConfig = new PubSubConnectionConfig($connectionName, $config);
+        $singleAttemptClient = new PubSubClient($connectionConfig->singleAttemptClientOptions());
+
+        return new PubSubDriver(
+            $connectionConfig,
+            $singleAttemptClient,
+            new PubSubClient($connectionConfig->clientOptions()),
+            new PubSubTopology($connectionConfig, $singleAttemptClient),
             $this->app->make(OwnershipPrefix::class),
             $this->app->make(SubscriptionRegistry::class),
         );

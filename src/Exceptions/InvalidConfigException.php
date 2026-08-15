@@ -58,6 +58,11 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
         return new self("SNS/SQS connection [$connectionName] setting [$setting] $requirement.");
     }
 
+    public static function pubSubSetting(string $connectionName, string $setting, string $requirement): self
+    {
+        return new self("Google Pub/Sub connection [$connectionName] setting [$setting] $requirement.");
+    }
+
     public static function unsupportedHandoffIdempotencyCacheStore(?string $store): self
     {
         $name = $store ?? 'default';

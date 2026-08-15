@@ -26,6 +26,7 @@
     "require-dev": {
         "php-amqplib/php-amqplib": "^3.7.4",
         "aws/aws-sdk-php": "^3.392.0",
+        "google/cloud-pubsub": "^2.20.0",
         "laravel/pint": "^1.0",
         "orchestra/testbench": "^10.0||^11.0",
         "pestphp/pest": "^4.0",
@@ -53,7 +54,8 @@
     },
     "suggest": {
         "php-amqplib/php-amqplib": "Required to use the RabbitMQ driver (^3.7.4).",
-        "aws/aws-sdk-php": "Required to use the AWS SNS/SQS driver (^3.392.0)."
+        "aws/aws-sdk-php": "Required to use the AWS SNS/SQS driver (^3.392.0).",
+        "google/cloud-pubsub": "Required to use the Google Pub/Sub driver (^2.20.0)."
     },
     "scripts": {
         "test": "pest --compact --parallel",

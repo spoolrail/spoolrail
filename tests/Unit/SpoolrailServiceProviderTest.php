@@ -118,6 +118,17 @@ test('loads the built-in SNS/SQS connection template', function (): void {
     ]);
 });
 
+test('loads the built-in Google Pub/Sub connection template', function (): void {
+    expect(config('spoolrail.connections.pubsub'))->toBe([
+        'driver' => 'pubsub',
+        'project_id' => 'spoolrail',
+        'credentials' => '/run/secrets/spoolrail-pubsub.json',
+        'endpoint' => null,
+        'message_ordering' => true,
+        'exactly_once' => true,
+    ]);
+});
+
 test('loads application subscription routes without deriving an ownership prefix or resolving a broker connection', function (): void {
     // --- Arrange ---
     config()->set('spoolrail.prefix');
