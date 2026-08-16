@@ -61,3 +61,5 @@ composer test -- --testsuite=Unit
 ```
 
 Reserve the full mutation suite for major project milestones and explicit requests, after the ordinary test suite passes.
+
+External tests use billable production services. Run them only at the user's request or after asking and receiving permission, and announce the run before execution. Exclude them from routine verification, target only the relevant provider during setup or diagnosis, and follow `tests/External/README.md` for setup and commands.
