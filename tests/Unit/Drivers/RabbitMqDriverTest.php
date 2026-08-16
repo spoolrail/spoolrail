@@ -239,7 +239,7 @@ test('refreshes an idle publisher connection before publishing again', function 
     $driver->close();
 });
 
-test('acknowledges a delivery only after the handoff returns', function (): void {
+test('passes RabbitMQ delivery context and acknowledges only after the handoff returns', function (): void {
     // --- Arrange ---
     $events = [];
     $expectedQueue = app(OwnershipPrefix::class)->current().'-order-imports';

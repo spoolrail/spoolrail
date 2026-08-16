@@ -65,6 +65,34 @@ test('retries the same prepared publication', function (): void {
     ]);
 });
 
+test('retries publication failures twice with one-second waits by default', function (): void {
+    // --- Arrange ---
+    Sleep::fake();
+
+    $attempts = 0;
+    $driver = Mockery::mock(Driver::class);
+    $driver->expects('publish')
+        ->times(3)
+        ->andReturnUsing(function () use (&$attempts): void {
+            $attempts++;
+
+            if ($attempts < 3) {
+                throw PublicationException::notSent(new RuntimeException('Broker unavailable.'));
+            }
+        });
+    $connection = new Connection($driver, new MessageEnvelope);
+
+    // --- Act ---
+    $connection->publish('orders', Message::make('order.created', []));
+
+    // --- Assert ---
+    expect($attempts)->toBe(3);
+    Sleep::assertSequence([
+        Sleep::for(1)->second(),
+        Sleep::for(1)->second(),
+    ]);
+});
+
 test('does not retry an explicit publication rejection', function (): void {
     // --- Arrange ---
     Sleep::fake();

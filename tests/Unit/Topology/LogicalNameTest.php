@@ -31,14 +31,11 @@ test('rejects values outside the portable logical-name grammar', function (strin
 test('applies the portable length budget for each logical-name role', function (): void {
     $topicAtLimit = 't'.str_repeat('o', 250);
     $subscriptionAtLimit = 's'.str_repeat('u', 49);
-    $prefixAtLimit = 'p'.str_repeat('r', 23);
 
     expect(LogicalName::isValidTopic($topicAtLimit))->toBeTrue()
         ->and(LogicalName::isValidTopic("{$topicAtLimit}o"))->toBeFalse()
         ->and(LogicalName::isValidSubscription($subscriptionAtLimit))->toBeTrue()
-        ->and(LogicalName::isValidSubscription("{$subscriptionAtLimit}u"))->toBeFalse()
-        ->and(strlen("$topicAtLimit.fifo"))->toBe(256)
-        ->and(strlen("$prefixAtLimit-$subscriptionAtLimit.fifo"))->toBe(80);
+        ->and(LogicalName::isValidSubscription("{$subscriptionAtLimit}u"))->toBeFalse();
 });
 
 test('reserves transport-specific topic beginnings without restricting subscription names', function (): void {

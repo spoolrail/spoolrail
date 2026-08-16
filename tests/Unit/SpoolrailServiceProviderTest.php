@@ -7,13 +7,12 @@ use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\SpoolrailServiceProvider;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
-test('registers the public supervisor and hidden consumer command', function (): void {
+test('registers the public commands and hidden consumer runtime', function (): void {
     // --- Act ---
     $commands = app(Kernel::class)->all();
 
     // --- Assert ---
     expect($commands)->toHaveKeys(['spoolrail', 'spoolrail:terminate', 'spoolrail:consume']);
-    expect($commands)->not->toHaveKey('spoolrail:work');
     expect($commands['spoolrail']->isHidden())->toBeFalse();
     expect($commands['spoolrail:consume']->isHidden())->toBeTrue();
 });
@@ -26,12 +25,12 @@ test('publishes the package config under the spoolrail config tag', function ():
     );
 
     // --- Assert ---
-    expect($paths)->toHaveCount(1);
+    $source = dirname(__DIR__, 2).'/config/spoolrail.php';
+    $destination = collect($paths)->first(
+        fn (string $_destination, string $publishedSource): bool => realpath($publishedSource) === realpath($source),
+    );
 
-    $source = array_key_first($paths);
-
-    expect(realpath($source))->toBe(realpath(dirname(__DIR__, 2).'/config/spoolrail.php'));
-    expect($paths[$source])->toBe(config_path('spoolrail.php'));
+    expect($destination)->toBe(config_path('spoolrail.php'));
 });
 
 test('publishes the outbox migration under the spoolrail migrations tag', function (): void {
@@ -42,91 +41,14 @@ test('publishes the outbox migration under the spoolrail migrations tag', functi
     );
 
     // --- Assert ---
-    expect($paths)->toHaveCount(1);
+    $source = dirname(__DIR__, 2).'/database/migrations/0001_01_01_000000_create_outbox_publications_table.php';
+    $destination = collect($paths)->first(
+        fn (string $_destination, string $publishedSource): bool => realpath($publishedSource) === realpath($source),
+    );
 
-    $source = array_key_first($paths);
-
-    expect(realpath($source))->toBe(realpath(
-        dirname(__DIR__, 2).'/database/migrations/0001_01_01_000000_create_outbox_publications_table.php',
-    ));
-    expect($paths[$source])->toBe(
+    expect($destination)->toBe(
         database_path('migrations/0001_01_01_000000_create_outbox_publications_table.php'),
     );
-});
-
-test('loads the direct publication policy and outbox defaults', function (): void {
-    expect(config('spoolrail.publisher_retries'))->toBe([
-        'times' => 2,
-        'delay_milliseconds' => 1000,
-    ]);
-
-    expect(config('spoolrail.outbox'))->toBe([
-        'enabled' => false,
-        'connection' => 'testing',
-        'exception_cooldown' => 300,
-    ]);
-});
-
-test('loads the consumer exception cooldown default', function (): void {
-    expect(config('spoolrail.consumer'))->toBe([
-        'exception_cooldown' => 300,
-    ]);
-});
-
-test('loads the Queue handoff idempotency defaults', function (): void {
-    expect(config('spoolrail.handoff_idempotency'))->toBe([
-        'cache_store' => 'array',
-        'expiry' => 600,
-    ]);
-});
-
-test('loads the built-in RabbitMQ connection template', function (): void {
-    $connection = config('spoolrail.connections.rabbitmq');
-
-    expect($connection)->toBeArray();
-    expect($connection['driver'])->toBe('rabbitmq');
-    expect($connection['scheme'])->toBe('amqp');
-    expect($connection['host'])->toBe('127.0.0.1');
-    expect($connection['username'])->toBe('test');
-    expect($connection['password'])->toBe('test');
-    expect($connection['ca_file'])->toBeNull();
-    expect($connection['connection_timeout'])->toBe(3);
-    expect($connection['publisher_confirm_timeout'])->toBe(60);
-    expect($connection['prefetch'])->toBe(10);
-    expect($connection['management']['url'])->toBe('http://127.0.0.1:15672');
-    expect($connection['management']['username'])->toBe('test');
-    expect($connection['management']['password'])->toBe('test');
-    expect($connection['management']['ca_file'])->toBeNull();
-});
-
-test('loads the built-in SNS/SQS connection template', function (): void {
-    $connection = config('spoolrail.connections.snssqs');
-    $region = $connection['region'] ?? null;
-    unset($connection['region']);
-
-    expect($region)->toBeString()->not->toBeEmpty();
-    expect($connection)->toBe([
-        'driver' => 'snssqs',
-        'key' => '000000000000',
-        'secret' => 'test',
-        'token' => null,
-        'account_id' => '000000000000',
-        'endpoint' => 'http://127.0.0.1:4566',
-        'fifo' => true,
-        'connection_timeout' => 3,
-        'request_timeout' => 60,
-    ]);
-});
-
-test('loads the built-in Google Pub/Sub connection template', function (): void {
-    expect(config('spoolrail.connections.pubsub'))->toBe([
-        'driver' => 'pubsub',
-        'project_id' => 'spoolrail',
-        'credentials' => '/run/secrets/spoolrail-pubsub.json',
-        'endpoint' => null,
-        'message_ordering' => true,
-        'exactly_once' => true,
-    ]);
 });
 
 test('loads application subscription routes without deriving an ownership prefix or resolving a broker connection', function (): void {

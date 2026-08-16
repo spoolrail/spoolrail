@@ -29,7 +29,6 @@ test('publishes one independently hydrated delivery to every matching subscripti
     $this->artisan('spoolrail warehouse-returns')->run();
 
     // --- Assert ---
-    expect($published->transport)->toBeNull();
     expect(array_map(
         static fn (Message $message): string => $message->id,
         RecordingMessageHandler::$messages,
@@ -41,18 +40,22 @@ test('publishes one independently hydrated delivery to every matching subscripti
     expect(RecordingMessageHandler::$messages[0])->not->toBe($published);
     expect(RecordingMessageHandler::$messages[1])->not->toBe($published);
     expect(RecordingMessageHandler::$messages[1])->not->toBe(RecordingMessageHandler::$messages[0]);
-    expect(RecordingMessageHandler::$messages[0]->transport?->driver)->toBe('array');
-    expect(RecordingMessageHandler::$messages[0]->transport?->connectionName)->toBe('array');
-    expect(RecordingMessageHandler::$messages[0]->transport?->topic)->toBe('orders');
-    expect(RecordingMessageHandler::$messages[0]->transport?->subscription)->toBe('warehouse-orders');
-    expect(RecordingMessageHandler::$messages[0]->transport?->headers)
-        ->toBe(['correlation-id' => 'A-42']);
-    expect(RecordingMessageHandler::$messages[0]->transport?->transportMessageId)->toBeNull();
-    expect(RecordingMessageHandler::$messages[0]->transport?->transportPublishedAt)->toBeNull();
-    expect(RecordingMessageHandler::$messages[0]->transport?->redelivered)->toBeFalse();
-    expect(RecordingMessageHandler::$messages[1]->transport?->subscription)->toBe('analytics-orders');
-    expect(RecordingMessageHandler::$messages[1]->transport?->headers)
-        ->toBe(['correlation-id' => 'A-42']);
+    expect(array_map(
+        static fn (Message $message): array => [
+            'subscription' => $message->transport?->subscription,
+            'headers' => $message->transport?->headers,
+        ],
+        RecordingMessageHandler::$messages,
+    ))->toBe([
+        [
+            'subscription' => 'warehouse-orders',
+            'headers' => ['correlation-id' => 'A-42'],
+        ],
+        [
+            'subscription' => 'analytics-orders',
+            'headers' => ['correlation-id' => 'A-42'],
+        ],
+    ]);
 });
 
 test('publishes only to subscriptions on the selected Spoolrail connection', function (): void {

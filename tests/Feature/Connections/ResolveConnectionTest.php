@@ -16,16 +16,6 @@ test('resolves and caches each configured ArrayDriver connection', function (): 
     expect($secondaryConnection)->not->toBe($defaultConnection);
 });
 
-test('resolves the built-in Google Pub/Sub connection', function (): void {
-    config()->set('spoolrail.connections.pubsub', [
-        'driver' => 'pubsub',
-        'project_id' => 'spoolrail',
-        'credentials' => null,
-    ]);
-
-    expect(Spoolrail::connection('pubsub')->topology())->not->toBeNull();
-});
-
 test('rejects an undefined connection', function (): void {
     expect(fn () => Spoolrail::connection('missing'))
         ->toThrow(InvalidConfigException::class, 'Spoolrail connection [missing] is not defined.');

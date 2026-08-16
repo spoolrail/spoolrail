@@ -49,6 +49,45 @@ test('synchronizes ordered exactly-once fanout and preserves publication metadat
     expect($warehouseMessage->orderingKey())->toBe('order:42');
 });
 
+test('uses one ordered Pub/Sub lane when publications omit an application key', function (): void {
+    // --- Arrange ---
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('pubsub');
+    $this->artisan('spoolrail:sync')->run();
+
+    // --- Act ---
+    Spoolrail::connection('pubsub')->publish(
+        'orders',
+        Message::make('order.created', ['sequence' => 'first']),
+    );
+    Spoolrail::connection('pubsub')->publish(
+        'orders',
+        Message::make('order.created', ['sequence' => 'second']),
+    );
+
+    // --- Assert ---
+    $subscription = $this->pubSubSubscription('warehouse-orders');
+    $messages = [];
+
+    for ($attempt = 0; $attempt < 3 && count($messages) < 2; $attempt++) {
+        array_push(
+            $messages,
+            ...$subscription->pull(['maxMessages' => 2 - count($messages)]),
+        );
+    }
+
+    $orderingKeys = [];
+
+    foreach ($messages as $message) {
+        $sequence = (new MessageEnvelope)->decode($message->data())->payload['sequence'];
+        $orderingKeys[$sequence] = $message->orderingKey();
+    }
+
+    expect($orderingKeys)->toHaveKeys(['first', 'second']);
+    expect($orderingKeys['first'])->not->toBeEmpty();
+    expect($orderingKeys['second'])->toBe($orderingKeys['first']);
+});
+
 test('creates unordered at-least-once subscriptions without injecting a default key', function (): void {
     // --- Arrange ---
     config()->set('spoolrail.connections.pubsub.message_ordering', false);

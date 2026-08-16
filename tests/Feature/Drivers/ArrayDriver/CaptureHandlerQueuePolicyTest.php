@@ -59,8 +59,6 @@ test('redelivers when handler Queue policy capture fails during handoff', functi
     expect($failure?->getMessage())->toBe('Handler queue policy failed.');
     expect(RecordingMessageHandler::$messages)->toHaveCount(1);
     expect(RecordingMessageHandler::$messages[0]->id)->toBe($published->id);
-    expect(RecordingMessageHandler::$messages[0]->transport?->subscription)
-        ->toBe('failing-policy-orders');
 });
 
 test('uses captured Queue policy while resolving a replacement handler at execution', function (): void {

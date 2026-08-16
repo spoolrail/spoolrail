@@ -185,7 +185,7 @@ test('reports an uncertain transport failure without a hidden retry', function (
     expect(count($handler))->toBe(0);
 });
 
-test('resolves one queue URL and reuses it for receiving and settlement', function (): void {
+test('reuses one resolved queue URL while passing SQS context and settling the delivery', function (): void {
     // --- Arrange ---
     $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders.fifo';
     $commands = [];

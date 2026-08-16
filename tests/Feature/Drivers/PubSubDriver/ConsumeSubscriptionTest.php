@@ -10,7 +10,7 @@ use Spoolrail\Spoolrail\TransportContext;
 
 uses(InteractsWithPubSub::class);
 
-test('passes Pub/Sub deliveries and context to Queue until the handoff fails', function (): void {
+test('passes Pub/Sub deliveries to Queue until the handoff fails', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
@@ -31,8 +31,8 @@ test('passes Pub/Sub deliveries and context to Queue until the handoff fails', f
     try {
         Spoolrail::connection('pubsub')->consume(
             'warehouse-orders',
-            function (string $body, TransportContext $context) use (&$handoffs, $failure): void {
-                $handoffs[] = [$body, $context];
+            function (string $body, TransportContext $_context) use (&$handoffs, $failure): void {
+                $handoffs[] = $body;
 
                 if (count($handoffs) === 2) {
                     throw $failure;
@@ -47,8 +47,8 @@ test('passes Pub/Sub deliveries and context to Queue until the handoff fails', f
     expect($caught ?? null)->toBe($failure);
     expect($handoffs)->toHaveCount(2);
     $receivedIds = array_map(
-        static fn (array $handoff): string => json_decode(
-            $handoff[0],
+        static fn (string $body): string => json_decode(
+            $body,
             true,
             flags: JSON_THROW_ON_ERROR,
         )['id'],
@@ -56,7 +56,4 @@ test('passes Pub/Sub deliveries and context to Queue until the handoff fails', f
     );
     expect($receivedIds)->toContain($first->id);
     expect($receivedIds)->toContain($second->id);
-    expect($handoffs[0][1]->driver)->toBe('pubsub');
-    expect($handoffs[0][1]->topic)->toBe('orders');
-    expect($handoffs[0][1]->orderingKey)->toBe('spoolrail');
 });

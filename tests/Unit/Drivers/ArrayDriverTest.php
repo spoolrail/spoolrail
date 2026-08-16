@@ -31,7 +31,7 @@ test('reserves an in-flight delivery from a competing consumer', function (): vo
     expect($bodies)->toBe(['first order', 'second order']);
 });
 
-test('releases a failed handoff and stops the current delivery drain', function (): void {
+test('releases a failed handoff with fresh redelivery context and stops the current drain', function (): void {
     // --- Arrange ---
     $subscriptions = new SubscriptionRegistry;
     $subscriptions->subscribe('orders', 'failing-orders', RecordingMessageHandler::class);

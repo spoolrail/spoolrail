@@ -88,7 +88,7 @@ test('reports an unknown outcome when Pub/Sub returns no message ID', function (
     expect($caught?->getPrevious()?->getMessage())->toContain('returned no message ID');
 });
 
-test('pulls one delivery at a time and acknowledges it after handoff', function (): void {
+test('pulls one delivery at a time with Pub/Sub context and acknowledges it after handoff', function (): void {
     // --- Arrange ---
     $message = pubSubDelivery();
     $handoffCompleted = false;

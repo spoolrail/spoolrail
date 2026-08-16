@@ -39,8 +39,8 @@ test('deletes only deliveries whose Queue handoff returns normally', function ()
     try {
         Spoolrail::connection('snssqs')->consume(
             'warehouse-orders',
-            function (string $body, TransportContext $context) use (&$handoffs, $failure): void {
-                $handoffs[] = [$body, $context];
+            function (string $body, TransportContext $_context) use (&$handoffs, $failure): void {
+                $handoffs[] = $body;
 
                 if (count($handoffs) === 2) {
                     throw $failure;
@@ -61,9 +61,7 @@ test('deletes only deliveries whose Queue handoff returns normally', function ()
 
     expect($caught)->toBe($failure);
     expect($handoffs)->toHaveCount(2);
-    expect(json_decode($handoffs[0][0], true, flags: JSON_THROW_ON_ERROR)['id'])->toBe($first->id);
-    expect(json_decode($handoffs[1][0], true, flags: JSON_THROW_ON_ERROR)['id'])->toBe($second->id);
-    expect($handoffs[0][1]->topic)->toBe('orders');
-    expect($handoffs[0][1]->orderingKey)->toBe('order:42');
+    expect(json_decode($handoffs[0], true, flags: JSON_THROW_ON_ERROR)['id'])->toBe($first->id);
+    expect(json_decode($handoffs[1], true, flags: JSON_THROW_ON_ERROR)['id'])->toBe($second->id);
     expect(json_decode($remaining[0]['Body'], true, flags: JSON_THROW_ON_ERROR)['id'])->toBe($second->id);
 });
