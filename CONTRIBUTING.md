@@ -24,6 +24,10 @@ Stop them with:
 docker compose down
 ```
 
+## External Tests
+
+See the [External test guide](tests/External/README.md) for account setup, configuration, execution, and cleanup.
+
 ## Git Hooks
 
 Install project hooks:
@@ -46,6 +50,7 @@ If you use Fork and hooks misbehave, see [this issue](https://github.com/fork-de
 | Command                  | Purpose                                            |
 | ------------------------ | -------------------------------------------------- |
 | `composer test`          | Run the default suite.                             |
+| `composer test:external` | Run billable tests against real cloud services.    |
 | `composer format`        | Run Laravel Pint and Prettier formatting.          |
 | `composer format:check`  | Check Laravel Pint and Prettier formatting.        |
 | `composer analyse`       | Run static analysis (`phpstan`).                   |

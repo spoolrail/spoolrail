@@ -59,6 +59,7 @@
     },
     "scripts": {
         "test": "pest --compact --parallel",
+        "test:external": "pest --compact --testsuite=External",
         "format": [
             "pint --parallel",
             "npm run format"
