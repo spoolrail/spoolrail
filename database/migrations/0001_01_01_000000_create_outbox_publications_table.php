@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function getConnection(): ?string
     {
-        $connection = config('spoolrail.outbox.connection');
+        $connection = config('spoolrail.outbox.database_connection');
 
         return is_string($connection) ? $connection : null;
     }

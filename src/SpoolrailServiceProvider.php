@@ -10,6 +10,7 @@ use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
 use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
 use Spoolrail\Spoolrail\Console\PublishCommand;
+use Spoolrail\Spoolrail\Console\PublishLanesCommand;
 use Spoolrail\Spoolrail\Console\SpoolrailCommand;
 use Spoolrail\Spoolrail\Console\SyncCommand;
 use Spoolrail\Spoolrail\Console\TerminateCommand;
@@ -45,6 +46,7 @@ class SpoolrailServiceProvider extends ServiceProvider
                 DeleteTopicCommand::class,
                 DeleteUndeclaredSubscriptionsCommand::class,
                 PublishCommand::class,
+                PublishLanesCommand::class,
                 SyncCommand::class,
                 TerminateCommand::class,
             ]);

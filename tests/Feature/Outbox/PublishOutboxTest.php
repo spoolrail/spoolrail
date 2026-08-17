@@ -13,6 +13,8 @@ use Spoolrail\Spoolrail\Exceptions\OutboxPublicationException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
+use Spoolrail\Spoolrail\Outbox\OutboxAssignment;
+use Spoolrail\Spoolrail\Outbox\OutboxPublication;
 use Spoolrail\Spoolrail\Outbox\PublishOutbox;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithOutbox;
 
@@ -158,7 +160,7 @@ test('finishes the current publication before stopping', function (): void {
     );
 
     // --- Act ---
-    $succeeded = $publishOutbox();
+    $succeeded = $publishOutbox(currentOutboxAssignment());
 
     // --- Assert ---
     $pending = DB::table('outbox_publications')->orderBy('id')->get();
@@ -199,7 +201,7 @@ test('records a failed current publication before stopping', function (): void {
     );
 
     // --- Act ---
-    $succeeded = $publishOutbox();
+    $succeeded = $publishOutbox(currentOutboxAssignment());
 
     // --- Assert ---
     $pending = DB::table('outbox_publications')->orderBy('id')->get();
@@ -446,26 +448,19 @@ test('reports every failed attempt when the reporting cache is unavailable', fun
     expect(DB::table('outbox_publications')->count())->toBe(1);
 });
 
-test('throttles failure reports per row and logs recovery after deletion', function (): void {
+test('throttles contextual failure reports per row', function (): void {
     // --- Arrange ---
-    config()->set('spoolrail.connections.events', ['driver' => 'recovering']);
+    config()->set('spoolrail.connections.events', ['driver' => 'failing']);
 
-    $attempt = 0;
     $driver = Mockery::mock(Driver::class);
     $driver->allows('consume');
     $driver->shouldReceive('publish')
-        ->times(3)
-        ->andReturnUsing(function () use (&$attempt): void {
-            $attempt++;
+        ->twice()
+        ->andThrow(PublicationException::outcomeUnknown(
+            new RuntimeException("Confirmation timed out.\nAwaiting broker."),
+        ));
 
-            if ($attempt <= 2) {
-                throw PublicationException::outcomeUnknown(
-                    new RuntimeException("Confirmation timed out.\nAwaiting broker."),
-                );
-            }
-        });
-
-    Spoolrail::extend('recovering', static fn (): Driver => $driver);
+    Spoolrail::extend('failing', static fn (): Driver => $driver);
 
     $message = Spoolrail::connection('events')->publish(
         'orders',
@@ -482,16 +477,6 @@ test('throttles failure reports per row and logs recovery after deletion', funct
         });
     app()->instance(ExceptionHandler::class, $handler);
 
-    Log::shouldReceive('notice')
-        ->once()
-        ->withArgs(function (string $message, array $context) use ($rowId): bool {
-            expect(DB::table('outbox_publications')->where('id', $rowId)->doesntExist())->toBeTrue();
-            expect($message)->toBe('Spoolrail outbox publication recovered.');
-            expect($context['outbox_id'])->toBe($rowId);
-
-            return true;
-        });
-
     // --- Act ---
     CarbonImmutable::setTestNow('2026-08-06 12:00:00 UTC');
     $firstExitCode = $this->artisan('spoolrail:publish')->run();
@@ -499,13 +484,10 @@ test('throttles failure reports per row and logs recovery after deletion', funct
     CarbonImmutable::setTestNow('2026-08-06 12:00:01 UTC');
     $secondExitCode = $this->artisan('spoolrail:publish')->run();
     $secondRow = DB::table('outbox_publications')->sole();
-    CarbonImmutable::setTestNow('2026-08-06 12:00:02 UTC');
-    $thirdExitCode = $this->artisan('spoolrail:publish')->run();
 
     // --- Assert ---
     expect($firstExitCode)->toBe(1);
     expect($secondExitCode)->toBe(1);
-    expect($thirdExitCode)->toBe(0);
     expect($secondRow->last_error)
         ->toBe('Confirmation timed out. Awaiting broker.');
     expect($secondRow->updated_at)->not->toBe($firstUpdatedAt);
@@ -523,5 +505,66 @@ test('throttles failure reports per row and logs recovery after deletion', funct
         'spoolrail_publication_outcome' => 'Unknown',
     ]);
     expect($reported[0]->getPrevious())->toBeInstanceOf(PublicationException::class);
-    expect(DB::table('outbox_publications')->count())->toBe(0);
 });
+
+test('logs recovery after deleting a previously failed row', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.connections.events', ['driver' => 'recovering']);
+
+    $attempt = 0;
+    $driver = Mockery::mock(Driver::class);
+    $driver->allows('consume');
+    $driver->shouldReceive('publish')
+        ->twice()
+        ->andReturnUsing(function () use (&$attempt): void {
+            $attempt++;
+
+            if ($attempt === 1) {
+                throw PublicationException::notSent(new RuntimeException('Broker unavailable.'));
+            }
+        });
+
+    Spoolrail::extend('recovering', static fn (): Driver => $driver);
+
+    Spoolrail::connection('events')->publish(
+        'orders',
+        Message::make('order.created', ['order_id' => 42]),
+    );
+    $rowId = DB::table('outbox_publications')->sole()->id;
+
+    $handler = Mockery::mock(ExceptionHandler::class);
+    $handler->allows('report');
+    app()->instance(ExceptionHandler::class, $handler);
+
+    Log::shouldReceive('notice')
+        ->once()
+        ->withArgs(function (string $message, array $context) use ($rowId): bool {
+            expect(DB::table('outbox_publications')->where('id', $rowId)->doesntExist())->toBeTrue();
+            expect($message)->toBe('Spoolrail outbox publication recovered.');
+            expect($context['outbox_id'])->toBe($rowId);
+
+            return true;
+        });
+
+    // --- Act ---
+    $firstExitCode = $this->artisan('spoolrail:publish')->run();
+    $secondExitCode = $this->artisan('spoolrail:publish')->run();
+
+    // --- Assert ---
+    expect($firstExitCode)->toBe(1);
+    expect($secondExitCode)->toBe(0);
+});
+
+function currentOutboxAssignment(): OutboxAssignment
+{
+    $highestPublicationId = OutboxPublication::highestId();
+
+    if ($highestPublicationId === null) {
+        throw new LogicException('Expected pending outbox publications.');
+    }
+
+    return OutboxAssignment::fromLanes(
+        $highestPublicationId,
+        OutboxPublication::lanesThrough($highestPublicationId),
+    );
+}
