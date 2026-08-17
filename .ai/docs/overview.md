@@ -10,6 +10,8 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 **Keep committed outbox intent recoverable**: With the outbox enabled, a publication belongs to its configured database transaction until commit and remains package responsibility until successful dispatch removes its row. Failed or ambiguous attempts retain that intent; uncertainty must not be resolved by discarding it.
 
+**Keep outbox concurrency lane-scoped**: Dispatch may overlap only distinct stored connection-and-topic lanes. One lane remains commit-visible oldest first and a failed head still blocks its own later rows, so process allocation must never give a lane more than one owner within a run.
+
 **Keep topology explicit**: Subscription declarations are the sole topology source. Publishing and consumption never create or reconcile resources. Synchronization preflights every referenced managed connection before applying any plan, and deletion remains explicit.
 
 **Topology recovery restarts reconciliation**: Recover non-destructive discovery and apply failures through one cross-driver synchronization retry, so recovery re-reads broker state instead of compounding hidden client attempts or continuing a stale plan. Destructive topology commands remain outside this policy.
@@ -33,5 +35,7 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 **Consumption bridges to Laravel Queue**: A transport delivery becomes a Laravel Queue job; an asynchronous queue worker invokes the handler later. The `sync` Queue connection executes the handler inside the consumer's handoff and retains the same settle-after-success rule.
 
 **Supervision selects processes, not messages**: The public consumer parent starts one clean PHP child per active subscription on one Spoolrail connection. Each child owns its transport receive loop and Queue handoff; the parent never receives, buffers, schedules, or settles deliveries.
+
+**Outbox concurrency changes execution only**: Serial parent execution and finite concurrent workers share one lane-publication engine. The concurrent parent assigns complete lanes and supervises clean workers; it does not publish rows, coordinate per-row priority, or recreate publication and recovery behavior.
 
 **Topology management is optional**: Drivers may support publishing and consumption without managing topology. Topology operations skip or reject those drivers instead of requiring every driver to own broker resources.

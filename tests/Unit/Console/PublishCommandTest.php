@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use Spoolrail\Spoolrail\Console\PublishCommand;
-use Spoolrail\Spoolrail\Outbox\PublishOutbox;
+use Spoolrail\Spoolrail\Outbox\OutboxDispatcher;
 
 test('requests a cooperative stop for termination signals', function (): void {
-    $publishOutbox = Mockery::mock(PublishOutbox::class);
-    $publishOutbox->expects('stop')->once();
-    $publishOutbox->expects('__invoke')->once()->andReturnTrue();
+    $dispatcher = Mockery::mock(OutboxDispatcher::class);
+    $dispatcher->expects('stop')->once()->with(SIGTERM);
+    $dispatcher->expects('__invoke')
+        ->once()
+        ->with(Mockery::type(Closure::class))
+        ->andReturnTrue();
 
     $command = Mockery::mock(PublishCommand::class)->makePartial();
     $command->expects('trap')
@@ -21,5 +24,5 @@ test('requests a cooperative stop for termination signals', function (): void {
             return true;
         });
 
-    expect($command->handle($publishOutbox))->toBe(PublishCommand::SUCCESS);
+    expect($command->handle($dispatcher))->toBe(PublishCommand::SUCCESS);
 });

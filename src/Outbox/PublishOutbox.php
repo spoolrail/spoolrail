@@ -34,15 +34,9 @@ class PublishOutbox
         private Repository $config,
     ) {}
 
-    public function __invoke(): bool
+    public function __invoke(OutboxAssignment $assignment): bool
     {
-        $highestId = OutboxPublication::highestId();
-
-        if ($highestId === null) {
-            return true;
-        }
-
-        return $this->publishThrough($highestId);
+        return $this->publishAssignedLanes($assignment);
     }
 
     public function stop(): void
@@ -50,12 +44,17 @@ class PublishOutbox
         $this->shouldStop = true;
     }
 
-    private function publishThrough(int $highestId): bool
+    private function publishAssignedLanes(OutboxAssignment $assignment): bool
     {
-        [$fresh, $retries] = $this->partition(OutboxPublication::headsThrough($highestId));
+        $heads = OutboxPublication::query()
+            ->select(['id', 'last_error'])
+            ->whereIn('id', $assignment->laneHeadIds)
+            ->get()
+            ->all();
+        [$fresh, $retries] = $this->partitionHeadsByFailure(array_values($heads));
         $failed = false;
 
-        while (($head = $this->nextHead($fresh, $retries)) instanceof OutboxPublication) {
+        while (($head = $this->pullNextHead($fresh, $retries)) instanceof OutboxPublication) {
             if ($this->shouldStop) {
                 break;
             }
@@ -71,7 +70,7 @@ class PublishOutbox
             $next = OutboxPublication::nextHeadInLane(
                 $publication->connection,
                 $publication->topic,
-                $highestId,
+                $assignment->highestPublicationId,
             );
 
             if ($next instanceof OutboxPublication) {
@@ -86,7 +85,7 @@ class PublishOutbox
      * @param  list<OutboxPublication>  $fresh
      * @param  list<OutboxPublication>  $retries
      */
-    private function nextHead(array &$fresh, array &$retries): ?OutboxPublication
+    private function pullNextHead(array &$fresh, array &$retries): ?OutboxPublication
     {
         return array_shift($fresh) ?? array_shift($retries);
     }
@@ -95,7 +94,7 @@ class PublishOutbox
      * @param  list<OutboxPublication>  $heads
      * @return array{list<OutboxPublication>, list<OutboxPublication>}
      */
-    private function partition(array $heads): array
+    private function partitionHeadsByFailure(array $heads): array
     {
         usort(
             $heads,

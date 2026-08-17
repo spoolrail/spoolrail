@@ -85,6 +85,11 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
         return new self('Spoolrail outbox exception cooldown must be a positive integer.');
     }
 
+    public static function invalidOutboxConcurrency(): self
+    {
+        return new self('Spoolrail outbox concurrency must be a positive integer.');
+    }
+
     public static function invalidPublisherRetrySetting(string $setting): self
     {
         return new self("Spoolrail publisher retry setting [$setting] must be a non-negative integer.");

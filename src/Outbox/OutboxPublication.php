@@ -21,6 +21,8 @@ use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
  * @property array<string, string> $headers
  * @property string|null $ordering_key
  * @property string|null $last_error
+ * @property int $head_id
+ * @property int $backlog_size
  */
 class OutboxPublication extends Model
 {
@@ -35,7 +37,7 @@ class OutboxPublication extends Model
             return $connection;
         }
 
-        $connection = config('spoolrail.outbox.connection');
+        $connection = config('spoolrail.outbox.database_connection');
 
         if ($connection === null) {
             return null;
@@ -57,6 +59,8 @@ class OutboxPublication extends Model
         return [
             'message' => 'json',
             'headers' => 'json',
+            'head_id' => 'integer',
+            'backlog_size' => 'integer',
         ];
     }
 
@@ -69,35 +73,39 @@ class OutboxPublication extends Model
     }
 
     /**
-     * @return list<self>
+     * @return list<OutboxLane>
      */
-    public static function headsThrough(int $highestId): array
+    public static function lanesThrough(int $highestPublicationId): array
     {
-        $headIds = static::query()
-            ->toBase()
-            ->selectRaw('MIN(id)')
-            ->where('id', '<=', $highestId)
-            ->groupBy('connection', 'topic');
+        $rows = static::query()
+            ->selectRaw('MIN(id) AS head_id')
+            ->selectRaw('COUNT(*) AS backlog_size')
+            ->where('id', '<=', $highestPublicationId)
+            ->groupBy('connection', 'topic')
+            ->get();
 
-        $heads = static::query()
-            ->select(['id', 'last_error'])
-            ->whereIn('id', $headIds)
-            ->get()
-            ->all();
+        $lanes = [];
 
-        return array_values($heads);
+        foreach ($rows as $row) {
+            $lanes[] = new OutboxLane(
+                headId: $row->head_id,
+                backlogSize: $row->backlog_size,
+            );
+        }
+
+        return $lanes;
     }
 
     public static function nextHeadInLane(
         string $connectionName,
         string $topic,
-        int $highestId,
+        int $highestPublicationId,
     ): ?self {
         return static::query()
             ->select(['id', 'last_error'])
             ->where('connection', $connectionName)
             ->where('topic', $topic)
-            ->where('id', '<=', $highestId)
+            ->where('id', '<=', $highestPublicationId)
             ->orderBy('id')
             ->first();
     }

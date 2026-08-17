@@ -131,6 +131,8 @@ return [
     |
     | Enable the outbox when publications must commit atomically with database
     | changes. The connection defaults to Laravel's default database connection.
+    | Concurrency allows different topics to publish at the same time. Publications
+    | for each topic remain ordered within its broker connection. The default is one.
     | Failed publication reports for the same row are throttled for the number
     | of seconds configured below.
     |
@@ -138,7 +140,8 @@ return [
 
     'outbox' => [
         'enabled' => env('SPOOLRAIL_OUTBOX', false),
-        'connection' => env('SPOOLRAIL_OUTBOX_CONNECTION', env('DB_CONNECTION', 'sqlite')),
+        'database_connection' => env('SPOOLRAIL_OUTBOX_DATABASE_CONNECTION', env('DB_CONNECTION', 'sqlite')),
+        'concurrency' => env('SPOOLRAIL_OUTBOX_CONCURRENCY', 1),
         'exception_cooldown' => 300,
     ],
 

@@ -100,7 +100,7 @@ test('uses the configured outbox connection independently of other database tran
         'prefix' => '',
         'foreign_key_constraints' => true,
     ]);
-    config()->set('spoolrail.outbox.connection', 'outbox');
+    config()->set('spoolrail.outbox.database_connection', 'outbox');
     DB::purge('outbox');
     $this->migrateOutbox();
 
@@ -118,7 +118,7 @@ test('uses the configured outbox connection independently of other database tran
 
 test('rejects an invalid outbox database connection', function (): void {
     // --- Arrange ---
-    config()->set('spoolrail.outbox.connection', '');
+    config()->set('spoolrail.outbox.database_connection', '');
 
     // --- Act ---
     $publish = fn (): Message => Spoolrail::publish(
