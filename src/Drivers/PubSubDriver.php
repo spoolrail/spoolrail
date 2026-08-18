@@ -78,18 +78,14 @@ class PubSubDriver implements CanManageTopology, Driver
         $nativeSubscription = $this->consumer->subscription($physicalName);
 
         for (; ;) {
-            $delivery = $this->receive($nativeSubscription);
+            foreach ($this->receive($nativeSubscription) as $delivery) {
+                $handoff(
+                    $delivery->body,
+                    $this->transportContext($definition, $delivery),
+                );
 
-            if (! $delivery instanceof Delivery) {
-                continue;
+                $this->settle($nativeSubscription, $delivery);
             }
-
-            $handoff(
-                $delivery->body,
-                $this->transportContext($definition, $delivery),
-            );
-
-            $this->settle($nativeSubscription, $delivery);
         }
     }
 
@@ -181,21 +177,26 @@ class PubSubDriver implements CanManageTopology, Driver
             && $messageIds[0] !== '';
     }
 
-    private function receive(PubSubSubscription $subscription): ?Delivery
+    /**
+     * @return list<Delivery>
+     */
+    private function receive(PubSubSubscription $subscription): array
     {
         try {
-            $messages = $subscription->pull(['maxMessages' => 1]);
+            $messages = $subscription->pull([
+                'maxMessages' => $this->config->receiveBatchSize(),
+            ]);
         } catch (Throwable $exception) {
             throw ConsumptionException::consumerStopped($exception);
         }
 
-        $message = $messages[0] ?? null;
+        $deliveries = [];
 
-        if ($message === null) {
-            return null;
+        foreach ($messages as $message) {
+            $deliveries[] = Delivery::fromMessage($message);
         }
 
-        return Delivery::fromMessage($message);
+        return $deliveries;
     }
 
     private function transportContext(

@@ -27,9 +27,9 @@ class PendingTopology implements TopologyPlan
     private array $queues = [];
 
     /**
-     * @var list<array{url: string, policy: string}>
+     * @var list<array{url: string, attributes: array<string, string>}>
      */
-    private array $queuePolicies = [];
+    private array $queueAttributeUpdates = [];
 
     /**
      * @var list<array{topic_arn: string, queue_arn: string}>
@@ -50,7 +50,7 @@ class PendingTopology implements TopologyPlan
     {
         $this->createTopics();
         $this->createQueues();
-        $this->updateQueuePolicies();
+        $this->updateQueueAttributes();
         $this->createSubscriptions();
     }
 
@@ -100,11 +100,14 @@ class PendingTopology implements TopologyPlan
         ];
     }
 
-    public function addQueuePolicy(string $url, string $policy): void
+    /**
+     * @param  array<string, string>  $attributes
+     */
+    public function updateQueue(string $url, array $attributes): void
     {
-        $this->queuePolicies[] = [
+        $this->queueAttributeUpdates[] = [
             'url' => $url,
-            'policy' => $policy,
+            'attributes' => $attributes,
         ];
     }
 
@@ -154,14 +157,14 @@ class PendingTopology implements TopologyPlan
         }
     }
 
-    private function updateQueuePolicies(): void
+    private function updateQueueAttributes(): void
     {
-        foreach ($this->queuePolicies as $policy) {
+        foreach ($this->queueAttributeUpdates as $update) {
             $this->applyRequest(
-                "updating SQS queue [{$policy['url']}]",
+                "updating SQS queue [{$update['url']}]",
                 fn (): Result => $this->sqs->setQueueAttributes([
-                    'QueueUrl' => $policy['url'],
-                    'Attributes' => ['Policy' => $policy['policy']],
+                    'QueueUrl' => $update['url'],
+                    'Attributes' => $update['attributes'],
                 ]),
             );
         }

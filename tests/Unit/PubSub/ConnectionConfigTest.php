@@ -31,6 +31,40 @@ test('leaves authentication to ADC when credentials are not configured', functio
     }
 });
 
+test('defaults the Pub/Sub receive batch size to ten', function (): void {
+    $config = new ConnectionConfig('pubsub', [
+        'project_id' => 'spoolrail-production',
+    ]);
+
+    expect($config->receiveBatchSize())->toBe(10);
+});
+
+test('accepts one thousand as the Pub/Sub receive batch size', function (): void {
+    $config = new ConnectionConfig('pubsub', [
+        'project_id' => 'spoolrail-production',
+        'receive_batch_size' => 1_000,
+    ]);
+
+    expect($config->receiveBatchSize())->toBe(1_000);
+});
+
+test('defaults the Pub/Sub acknowledgment deadline to thirty seconds', function (): void {
+    $config = new ConnectionConfig('pubsub', [
+        'project_id' => 'spoolrail-production',
+    ]);
+
+    expect($config->acknowledgmentDeadline())->toBe(30);
+});
+
+test('accepts ten minutes as the Pub/Sub acknowledgment deadline', function (): void {
+    $config = new ConnectionConfig('pubsub', [
+        'project_id' => 'spoolrail-production',
+        'acknowledgment_deadline' => 600,
+    ]);
+
+    expect($config->acknowledgmentDeadline())->toBe(600);
+});
+
 test('supplies configured service-account credentials to clients', function (): void {
     // --- Arrange ---
     $path = temporaryPubSubCredential([
@@ -105,6 +139,12 @@ test('rejects invalid connection settings', function (array $changes, string $me
     'endpoint port' => [['endpoint' => 'pubsub.googleapis.com:65536'], 'must be a hostname with an optional port'],
     'message ordering' => [['message_ordering' => 'true'], 'must be a boolean'],
     'exactly once' => [['exactly_once' => 1], 'must be a boolean'],
+    'non-integer receive batch size' => [['receive_batch_size' => '1'], 'must be an integer from 1 through 1000'],
+    'receive batch size below minimum' => [['receive_batch_size' => 0], 'must be an integer from 1 through 1000'],
+    'receive batch size above maximum' => [['receive_batch_size' => 1_001], 'must be an integer from 1 through 1000'],
+    'non-integer acknowledgment deadline' => [['acknowledgment_deadline' => '30'], 'must be an integer from 10 through 600'],
+    'acknowledgment deadline below minimum' => [['acknowledgment_deadline' => 9], 'must be an integer from 10 through 600'],
+    'acknowledgment deadline above maximum' => [['acknowledgment_deadline' => 601], 'must be an integer from 10 through 600'],
     'missing credential file' => [['credentials' => '/missing/spoolrail-pubsub.json'], 'must identify a readable JSON file'],
 ]);
 

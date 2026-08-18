@@ -80,18 +80,14 @@ class SnsSqsDriver implements CanManageTopology, Driver
         $queueUrl = $this->queueUrl($queueName);
 
         for (; ;) {
-            $delivery = $this->receive($queueUrl);
+            foreach ($this->receive($queueUrl) as $delivery) {
+                $handoff(
+                    $delivery->body,
+                    $this->transportContext($definition, $delivery),
+                );
 
-            if (! $delivery instanceof Delivery) {
-                continue;
+                $this->settle($queueUrl, $delivery);
             }
-
-            $handoff(
-                $delivery->body,
-                $this->transportContext($definition, $delivery),
-            );
-
-            $this->settle($queueUrl, $delivery);
         }
     }
 
@@ -218,11 +214,14 @@ class SnsSqsDriver implements CanManageTopology, Driver
         return $queueUrl;
     }
 
-    private function receive(string $queueUrl): ?Delivery
+    /**
+     * @return list<Delivery>
+     */
+    private function receive(string $queueUrl): array
     {
         $request = [
             'QueueUrl' => $queueUrl,
-            'MaxNumberOfMessages' => 1,
+            'MaxNumberOfMessages' => $this->config->receiveBatchSize(),
             'WaitTimeSeconds' => 20,
             'AttributeNames' => ['All'],
             'MessageAttributeNames' => ['All'],
@@ -238,7 +237,7 @@ class SnsSqsDriver implements CanManageTopology, Driver
             throw ConsumptionException::consumerStopped($exception);
         }
 
-        return Delivery::first($messages);
+        return Delivery::fromMessages($messages);
     }
 
     private function transportContext(

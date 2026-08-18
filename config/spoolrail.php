@@ -80,6 +80,8 @@ return [
             'account_id' => env('AWS_ACCOUNT_ID'),
             'endpoint' => env('SPOOLRAIL_AWS_ENDPOINT'),
             'fifo' => true,
+            'receive_batch_size' => 10,
+            'visibility_timeout' => 30,
             'connection_timeout' => 3,
             'request_timeout' => 60,
         ],
@@ -91,6 +93,8 @@ return [
             'endpoint' => env('SPOOLRAIL_GOOGLE_PUBSUB_ENDPOINT'),
             'message_ordering' => true,
             'exactly_once' => true,
+            'receive_batch_size' => 10,
+            'acknowledgment_deadline' => 30,
         ],
 
     ],

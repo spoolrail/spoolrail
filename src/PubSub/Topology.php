@@ -178,6 +178,7 @@ class Topology implements CanManageTopology
                 $native,
                 $this->config->messageOrdering(),
                 $this->config->exactlyOnce(),
+                $this->config->acknowledgmentDeadline(),
             );
 
             return;
@@ -185,10 +186,19 @@ class Topology implements CanManageTopology
 
         $this->ensureSubscriptionIsCompatible($physicalName, $topicName, $info);
 
+        $updates = [];
         $exactlyOnce = ($info['enableExactlyOnceDelivery'] ?? false) === true;
 
         if ($exactlyOnce !== $this->config->exactlyOnce()) {
-            $plan->updateExactlyOnce($native, $this->config->exactlyOnce());
+            $updates['enableExactlyOnceDelivery'] = $this->config->exactlyOnce();
+        }
+
+        if (($info['ackDeadlineSeconds'] ?? 10) !== $this->config->acknowledgmentDeadline()) {
+            $updates['ackDeadlineSeconds'] = $this->config->acknowledgmentDeadline();
+        }
+
+        if ($updates !== []) {
+            $plan->updateSubscription($native, $updates);
         }
     }
 

@@ -20,6 +20,8 @@ readonly class ConnectionConfig
         $this->endpoint();
         $this->fifo();
         $this->credentials();
+        $this->receiveBatchSize();
+        $this->visibilityTimeout();
         $this->connectionTimeout();
         $this->requestTimeout();
     }
@@ -80,6 +82,28 @@ readonly class ConnectionConfig
     public function requestTimeout(): int
     {
         return $this->positiveInteger('request_timeout', 60);
+    }
+
+    public function receiveBatchSize(): int
+    {
+        $value = $this->config['receive_batch_size'] ?? 10;
+
+        if (! is_int($value) || $value < 1 || $value > 10) {
+            $this->reject('receive_batch_size', 'must be an integer from 1 through 10');
+        }
+
+        return $value;
+    }
+
+    public function visibilityTimeout(): int
+    {
+        $value = $this->config['visibility_timeout'] ?? 30;
+
+        if (! is_int($value) || $value < 1 || $value > 43_200) {
+            $this->reject('visibility_timeout', 'must be an integer from 1 through 43200');
+        }
+
+        return $value;
     }
 
     /**

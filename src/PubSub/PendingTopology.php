@@ -18,17 +18,17 @@ class PendingTopology implements TopologyPlan
     /** @var list<Topic> */
     private array $topics = [];
 
-    /** @var list<array{subscription: Subscription, message_ordering: bool, exactly_once: bool}> */
+    /** @var list<array{subscription: Subscription, message_ordering: bool, exactly_once: bool, acknowledgment_deadline: int}> */
     private array $subscriptions = [];
 
-    /** @var list<array{subscription: Subscription, exactly_once: bool}> */
-    private array $exactlyOnceUpdates = [];
+    /** @var list<array{subscription: Subscription, settings: array<string, bool|int>}> */
+    private array $subscriptionUpdates = [];
 
     public function apply(): void
     {
         $this->createTopics();
         $this->createSubscriptions();
-        $this->updateExactlyOnceDelivery();
+        $this->updateSubscriptions();
     }
 
     public function addTopic(Topic $topic): void
@@ -40,19 +40,24 @@ class PendingTopology implements TopologyPlan
         Subscription $subscription,
         bool $messageOrdering,
         bool $exactlyOnce,
+        int $acknowledgmentDeadline,
     ): void {
         $this->subscriptions[] = [
             'subscription' => $subscription,
             'message_ordering' => $messageOrdering,
             'exactly_once' => $exactlyOnce,
+            'acknowledgment_deadline' => $acknowledgmentDeadline,
         ];
     }
 
-    public function updateExactlyOnce(Subscription $subscription, bool $enabled): void
+    /**
+     * @param  array<string, bool|int>  $settings
+     */
+    public function updateSubscription(Subscription $subscription, array $settings): void
     {
-        $this->exactlyOnceUpdates[] = [
+        $this->subscriptionUpdates[] = [
             'subscription' => $subscription,
-            'exactly_once' => $enabled,
+            'settings' => $settings,
         ];
     }
 
@@ -76,21 +81,22 @@ class PendingTopology implements TopologyPlan
                 static fn (): mixed => $subscription->create([
                     'enableMessageOrdering' => $pending['message_ordering'],
                     'enableExactlyOnceDelivery' => $pending['exactly_once'],
+                    'ackDeadlineSeconds' => $pending['acknowledgment_deadline'],
                 ]),
             );
         }
     }
 
-    private function updateExactlyOnceDelivery(): void
+    private function updateSubscriptions(): void
     {
-        foreach ($this->exactlyOnceUpdates as $pending) {
+        foreach ($this->subscriptionUpdates as $pending) {
             $subscription = $pending['subscription'];
 
             $this->applyRequest(
                 "updating subscription [{$subscription->name()}]",
                 static fn (): mixed => $subscription->update(
-                    ['enableExactlyOnceDelivery' => $pending['exactly_once']],
-                    ['updateMask' => ['enableExactlyOnceDelivery']],
+                    $pending['settings'],
+                    ['updateMask' => array_keys($pending['settings'])],
                 ),
             );
         }
