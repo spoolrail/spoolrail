@@ -243,6 +243,13 @@ class Topology implements CanManageTopology
         $attributes = $this->queueAttributes($queueUrl);
         $this->ensureQueueArnMatches($queueName, $queueArn, $attributes);
         $this->ensureQueueIsCompatible($queueName, $attributes);
+        $updates = [];
+        $visibilityTimeout = (string) $this->config->visibilityTimeout();
+
+        if (($attributes['VisibilityTimeout'] ?? null) !== $visibilityTimeout) {
+            $updates['VisibilityTimeout'] = $visibilityTimeout;
+        }
+
         $existingPolicy = $attributes['Policy'] ?? null;
         $updatedPolicy = $this->queuePolicy->withRoute(
             $queueName,
@@ -251,11 +258,15 @@ class Topology implements CanManageTopology
             $topicArn,
         );
 
-        if ($updatedPolicy === $existingPolicy) {
+        if ($updatedPolicy !== $existingPolicy) {
+            $updates['Policy'] = $updatedPolicy;
+        }
+
+        if ($updates === []) {
             return;
         }
 
-        $plan->addQueuePolicy($queueUrl, $updatedPolicy);
+        $plan->updateQueue($queueUrl, $updates);
     }
 
     /**
@@ -304,11 +315,10 @@ class Topology implements CanManageTopology
      */
     private function queueCreationAttributes(): array
     {
-        if (! $this->config->fifo()) {
-            return [];
-        }
-
-        return self::FIFO_QUEUE_ATTRIBUTES;
+        return [
+            ...($this->config->fifo() ? self::FIFO_QUEUE_ATTRIBUTES : []),
+            'VisibilityTimeout' => (string) $this->config->visibilityTimeout(),
+        ];
     }
 
     /**

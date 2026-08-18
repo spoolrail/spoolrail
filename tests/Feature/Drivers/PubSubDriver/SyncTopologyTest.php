@@ -7,6 +7,7 @@ use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageEnvelope;
+use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithPubSub;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
@@ -38,15 +39,38 @@ test('synchronizes ordered exactly-once fanout and preserves publication metadat
     expect($warehouse->info())->toMatchArray([
         'enableMessageOrdering' => true,
         'enableExactlyOnceDelivery' => true,
+        'ackDeadlineSeconds' => 30,
     ]);
     expect($billing->info())->toMatchArray([
         'enableMessageOrdering' => true,
         'enableExactlyOnceDelivery' => true,
+        'ackDeadlineSeconds' => 30,
     ]);
     expect((new MessageEnvelope)->decode($warehouseMessage->data()))->toEqual($published);
     expect((new MessageEnvelope)->decode($billingMessage->data()))->toEqual($published);
     expect($warehouseMessage->attributes())->toBe(['correlation-id' => 'A-42']);
     expect($warehouseMessage->orderingKey())->toBe('order:42');
+});
+
+test('reconciles the Pub/Sub acknowledgment deadline in place', function (): void {
+    // --- Arrange ---
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('pubsub');
+    $this->artisan('spoolrail:sync')->run();
+    $subscriptionName = $this->pubSubSubscription('warehouse-orders')->name();
+
+    config()->set('spoolrail.connections.pubsub.acknowledgment_deadline', 45);
+    app(SpoolrailManager::class)->forgetConnection('pubsub');
+
+    // --- Act ---
+    $exitCode = $this->artisan('spoolrail:sync')->run();
+
+    // --- Assert ---
+    $subscription = $this->pubSubSubscription('warehouse-orders');
+
+    expect($exitCode)->toBe(0);
+    expect($subscription->name())->toBe($subscriptionName);
+    expect($subscription->reload()['ackDeadlineSeconds'])->toBe(45);
 });
 
 test('uses one ordered Pub/Sub lane when publications omit an application key', function (): void {

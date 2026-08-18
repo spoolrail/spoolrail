@@ -16,7 +16,10 @@ test('requests a fresh synchronization after a transient topology failure', func
     $subscription->expects('name')->once()->andReturn('projects/spoolrail/subscriptions/warehouse-orders');
     $subscription->expects('update')->once()->andThrow($failure);
     $plan = new PendingTopology;
-    $plan->updateExactlyOnce($subscription, true);
+    $plan->updateSubscription($subscription, [
+        'enableExactlyOnceDelivery' => true,
+        'ackDeadlineSeconds' => 30,
+    ]);
 
     // --- Act ---
     $caught = null;
@@ -38,7 +41,10 @@ test('fails topology application immediately after a permanent refusal', functio
     $subscription->expects('name')->once()->andReturn('projects/spoolrail/subscriptions/warehouse-orders');
     $subscription->expects('update')->once()->andThrow($failure);
     $plan = new PendingTopology;
-    $plan->updateExactlyOnce($subscription, true);
+    $plan->updateSubscription($subscription, [
+        'enableExactlyOnceDelivery' => true,
+        'ackDeadlineSeconds' => 30,
+    ]);
 
     // --- Act ---
     $caught = null;

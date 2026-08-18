@@ -7,6 +7,7 @@ use Spoolrail\Spoolrail\Exceptions\TopologyPreflightException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\MessageEnvelope;
+use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithSnsSqs;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
@@ -48,10 +49,30 @@ test('synchronizes high-throughput FIFO topology and raw fanout', function (): v
         'FifoQueue' => 'true',
         'DeduplicationScope' => 'messageGroup',
         'FifoThroughputLimit' => 'perMessageGroupId',
+        'VisibilityTimeout' => '30',
     ]);
     expect((new MessageEnvelope)->decode($delivery['Body']))->toEqual($published);
     expect($delivery['Attributes']['MessageGroupId'])->toBe('order:42');
     expect($delivery['MessageAttributes']['correlation-id']['StringValue'])->toBe('A-42');
+});
+
+test('reconciles the SQS visibility timeout in place', function (): void {
+    // --- Arrange ---
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('snssqs');
+    $this->artisan('spoolrail:sync')->run();
+    $queueUrl = $this->sqsQueueUrl('warehouse-orders');
+
+    config()->set('spoolrail.connections.snssqs.visibility_timeout', 45);
+    app(SpoolrailManager::class)->forgetConnection('snssqs');
+
+    // --- Act ---
+    $exitCode = $this->artisan('spoolrail:sync')->run();
+
+    // --- Assert ---
+    expect($exitCode)->toBe(0);
+    expect($this->sqsQueueUrl('warehouse-orders'))->toBe($queueUrl);
+    expect($this->sqsQueueAttributes('warehouse-orders')['VisibilityTimeout'])->toBe('45');
 });
 
 test('synchronizes standard topology and propagates a supplied fair-queue group', function (): void {

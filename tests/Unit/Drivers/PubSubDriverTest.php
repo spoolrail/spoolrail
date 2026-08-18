@@ -88,24 +88,31 @@ test('reports an unknown outcome when Pub/Sub returns no message ID', function (
     expect($caught?->getPrevious()?->getMessage())->toContain('returned no message ID');
 });
 
-test('pulls one delivery at a time with Pub/Sub context and acknowledges it after handoff', function (): void {
+test('settles batched Pub/Sub deliveries individually after handoff', function (): void {
     // --- Arrange ---
-    $message = pubSubDelivery();
-    $handoffCompleted = false;
+    $first = pubSubDelivery();
+    $second = pubSubDelivery('B-43', 'ack-id-2', 'pubsub-message-id-2');
+    $events = [];
     $subscription = Mockery::mock(PubSubSubscription::class);
-    $subscription->expects('pull')->once()->with(['maxMessages' => 1])->andReturn([$message]);
+    $subscription->expects('pull')->once()->with(['maxMessages' => 2])->andReturn([$first, $second]);
     $subscription->expects('acknowledge')
-        ->once()
+        ->twice()
         ->withArgs(
-            static function (PubSubMessage $settled, array $options) use (&$handoffCompleted, $message): bool {
-                return $handoffCompleted
-                    && $settled === $message
-                    && $options === ['returnFailures' => true];
+            static function (PubSubMessage $settled, array $options) use (&$events): bool {
+                $reference = json_decode(
+                    $settled->data(),
+                    true,
+                    flags: JSON_THROW_ON_ERROR,
+                )['payload']['reference'];
+                $followsHandoff = end($events) === "handoff:$reference";
+                $events[] = "settle:$reference";
+
+                return $followsHandoff && $options === ['returnFailures' => true];
             },
         )
         ->andReturn([]);
-    $pullFailure = new RuntimeException('Stop after the settled delivery.');
-    $subscription->expects('pull')->once()->with(['maxMessages' => 1])->andThrow($pullFailure);
+    $pullFailure = new RuntimeException('Stop after the settled batch.');
+    $subscription->expects('pull')->once()->with(['maxMessages' => 2])->andThrow($pullFailure);
 
     $consumer = Mockery::mock(PubSubClient::class);
     $consumer->expects('subscription')
@@ -113,16 +120,17 @@ test('pulls one delivery at a time with Pub/Sub context and acknowledges it afte
         ->andReturn($subscription);
     $bodies = [];
     $contexts = [];
-    $driver = pubSubDriver(consumer: $consumer);
+    $driver = pubSubDriver(consumer: $consumer, receiveBatchSize: 2);
 
     // --- Act ---
     $caught = null;
 
     try {
-        $driver->consume('warehouse-orders', function (string $body, TransportContext $context) use (&$bodies, &$contexts, &$handoffCompleted): void {
+        $driver->consume('warehouse-orders', function (string $body, TransportContext $context) use (&$bodies, &$contexts, &$events): void {
             $bodies[] = $body;
             $contexts[] = $context;
-            $handoffCompleted = true;
+            $reference = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['payload']['reference'];
+            $events[] = "handoff:$reference";
         });
     } catch (ConsumptionException $exception) {
         $caught = $exception;
@@ -131,8 +139,9 @@ test('pulls one delivery at a time with Pub/Sub context and acknowledges it afte
     // --- Assert ---
     expect($caught?->failure ?? null)->toBe(ConsumptionFailure::ConsumerStopped);
     expect($caught?->getPrevious())->toBe($pullFailure);
-    expect($bodies)->toBe([pubSubMessageBody()]);
-    expect($contexts)->toHaveCount(1);
+    expect($bodies)->toBe([pubSubMessageBody(), pubSubMessageBody('B-43')]);
+    expect($events)->toBe(['handoff:A-42', 'settle:A-42', 'handoff:B-43', 'settle:B-43']);
+    expect($contexts)->toHaveCount(2);
     expect($contexts[0]->driver)->toBe('pubsub');
     expect($contexts[0]->connectionName)->toBe('pubsub');
     expect($contexts[0]->topic)->toBe('orders');
@@ -154,13 +163,13 @@ test('leaves optional delivery context unknown when Pub/Sub does not report it',
         'ackId' => 'ack-id',
     ]);
     $subscription = Mockery::mock(PubSubSubscription::class);
-    $subscription->expects('pull')->once()->andReturn([$message]);
+    $subscription->expects('pull')->once()->with(['maxMessages' => 1])->andReturn([$message]);
     $subscription->expects('acknowledge')->once()->andReturn([]);
     $subscription->expects('pull')->once()->andThrow(new RuntimeException('Stop after one delivery.'));
     $consumer = Mockery::mock(PubSubClient::class);
     $consumer->expects('subscription')->andReturn($subscription);
     $contexts = [];
-    $driver = pubSubDriver(consumer: $consumer);
+    $driver = pubSubDriver(consumer: $consumer, receiveBatchSize: 1);
 
     // --- Act ---
     try {
@@ -177,23 +186,33 @@ test('leaves optional delivery context unknown when Pub/Sub does not report it',
     expect($contexts[0]->orderingKey)->toBeNull();
 });
 
-test('leaves a Pub/Sub delivery unsettled and propagates the handoff failure', function (): void {
+test('settles only Pub/Sub deliveries whose handoffs complete', function (): void {
     // --- Arrange ---
-    $message = pubSubDelivery();
+    $first = pubSubDelivery('A-41', 'ack-id-1', 'pubsub-message-id-1');
+    $second = pubSubDelivery('A-42', 'ack-id-2', 'pubsub-message-id-2');
+    $third = pubSubDelivery('A-43', 'ack-id-3', 'pubsub-message-id-3');
     $subscription = Mockery::mock(PubSubSubscription::class);
-    $subscription->expects('pull')->once()->andReturn([$message]);
-    $subscription->expects('acknowledge')->never();
+    $subscription->expects('pull')->once()->with(['maxMessages' => 3])->andReturn([$first, $second, $third]);
+    $subscription->expects('acknowledge')
+        ->once()
+        ->with($first, ['returnFailures' => true])
+        ->andReturn([]);
     $consumer = Mockery::mock(PubSubClient::class);
     $consumer->expects('subscription')->andReturn($subscription);
-    $driver = pubSubDriver(consumer: $consumer);
+    $driver = pubSubDriver(consumer: $consumer, receiveBatchSize: 3);
     $failure = new RuntimeException('Laravel Queue handoff failed.');
+    $handedOffReferences = [];
 
     // --- Act ---
     $caught = null;
 
     try {
-        $driver->consume('warehouse-orders', static function () use ($failure): never {
-            throw $failure;
+        $driver->consume('warehouse-orders', static function (string $body) use (&$handedOffReferences, $failure): void {
+            $handedOffReferences[] = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['payload']['reference'];
+
+            if (count($handedOffReferences) === 2) {
+                throw $failure;
+            }
         });
     } catch (Throwable $exception) {
         $caught = $exception;
@@ -201,24 +220,39 @@ test('leaves a Pub/Sub delivery unsettled and propagates the handoff failure', f
 
     // --- Assert ---
     expect($caught ?? null)->toBe($failure);
+    expect($handedOffReferences)->toBe(['A-41', 'A-42']);
 });
 
-test('reports an acknowledgment exception as settlement failure', function (): void {
+test('stops before the Pub/Sub batch tail when settlement fails', function (): void {
     // --- Arrange ---
-    $message = pubSubDelivery();
+    $first = pubSubDelivery('A-41', 'ack-id-1', 'pubsub-message-id-1');
+    $second = pubSubDelivery('A-42', 'ack-id-2', 'pubsub-message-id-2');
+    $third = pubSubDelivery('A-43', 'ack-id-3', 'pubsub-message-id-3');
     $failure = new RuntimeException('Acknowledge request failed.');
     $subscription = Mockery::mock(PubSubSubscription::class);
-    $subscription->expects('pull')->once()->andReturn([$message]);
-    $subscription->expects('acknowledge')->once()->andThrow($failure);
+    $subscription->expects('pull')->once()->with(['maxMessages' => 3])->andReturn([$first, $second, $third]);
+    $subscription->expects('acknowledge')
+        ->once()
+        ->with($first, ['returnFailures' => true])
+        ->andReturn([])
+        ->ordered();
+    $subscription->expects('acknowledge')
+        ->once()
+        ->with($second, ['returnFailures' => true])
+        ->andThrow($failure)
+        ->ordered();
     $consumer = Mockery::mock(PubSubClient::class);
     $consumer->expects('subscription')->andReturn($subscription);
-    $driver = pubSubDriver(consumer: $consumer);
+    $driver = pubSubDriver(consumer: $consumer, receiveBatchSize: 3);
+    $handedOffReferences = [];
 
     // --- Act ---
     $caught = null;
 
     try {
-        $driver->consume('warehouse-orders', static function (): void {});
+        $driver->consume('warehouse-orders', static function (string $body) use (&$handedOffReferences): void {
+            $handedOffReferences[] = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['payload']['reference'];
+        });
     } catch (ConsumptionException $exception) {
         $caught = $exception;
     }
@@ -226,6 +260,7 @@ test('reports an acknowledgment exception as settlement failure', function (): v
     // --- Assert ---
     expect($caught?->failure ?? null)->toBe(ConsumptionFailure::SettlementFailed);
     expect($caught?->getPrevious())->toBe($failure);
+    expect($handedOffReferences)->toBe(['A-41', 'A-42']);
 });
 
 test('reports a failed exactly-once acknowledgment as settlement failure', function (): void {
@@ -255,11 +290,13 @@ test('reports a failed exactly-once acknowledgment as settlement failure', funct
 function pubSubDriver(
     ?PubSubClient $publisher = null,
     ?PubSubClient $consumer = null,
+    int $receiveBatchSize = 10,
 ): PubSubDriver {
     config()->set('spoolrail.prefix', 'warehouse');
 
     $config = new ConnectionConfig('pubsub', [
         'project_id' => 'spoolrail',
+        'receive_batch_size' => $receiveBatchSize,
     ]);
     $subscriptions = new SubscriptionRegistry;
     $subscriptions->subscribe(
@@ -278,26 +315,29 @@ function pubSubDriver(
     );
 }
 
-function pubSubMessageBody(): string
+function pubSubMessageBody(string $reference = 'A-42'): string
 {
     return json_encode([
         'id' => '01890a5d-ac96-774b-bcd0-48f622f3e798',
         'type' => 'order.created',
-        'payload' => ['reference' => 'A-42'],
+        'payload' => ['reference' => $reference],
         'published_at' => '2026-07-15T14:23:08.417Z',
     ], JSON_THROW_ON_ERROR);
 }
 
-function pubSubDelivery(): PubSubMessage
-{
+function pubSubDelivery(
+    string $reference = 'A-42',
+    string $ackId = 'ack-id',
+    string $messageId = 'pubsub-message-id',
+): PubSubMessage {
     return new PubSubMessage([
-        'data' => pubSubMessageBody(),
+        'data' => pubSubMessageBody($reference),
         'attributes' => ['correlation-id' => 'A-42'],
-        'messageId' => 'pubsub-message-id',
+        'messageId' => $messageId,
         'publishTime' => '2026-07-15T14:23:08.417Z',
         'orderingKey' => 'order:42',
     ], [
-        'ackId' => 'ack-id',
+        'ackId' => $ackId,
         'deliveryAttempt' => 2,
     ]);
 }

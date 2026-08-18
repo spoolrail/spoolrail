@@ -185,7 +185,7 @@ test('reports an uncertain transport failure without a hidden retry', function (
     expect(count($handler))->toBe(0);
 });
 
-test('reuses one resolved queue URL while passing SQS context and settling the delivery', function (): void {
+test('settles batched SQS deliveries individually after handoff', function (): void {
     // --- Arrange ---
     $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders.fifo';
     $commands = [];
@@ -195,35 +195,45 @@ test('reuses one resolved queue URL while passing SQS context and settling the d
                 $command->getName(),
                 $command->get('QueueUrl'),
                 $command->get('QueueOwnerAWSAccountId'),
+                $command->get('MaxNumberOfMessages'),
             ];
 
             return new Result(['QueueUrl' => $queueUrl]);
         },
         function ($command) use (&$commands): Result {
-            $commands[] = [$command->getName(), $command->get('QueueUrl'), null];
+            $commands[] = [$command->getName(), $command->get('QueueUrl'), null, $command->get('MaxNumberOfMessages')];
 
-            return new Result(['Messages' => [sqsDelivery()]]);
+            return new Result(['Messages' => [
+                sqsDelivery(),
+                sqsDelivery('B-43', 'receipt-handle-2', 'sqs-message-id-2'),
+            ]]);
         },
         function ($command) use (&$commands): Result {
-            $commands[] = [$command->getName(), $command->get('QueueUrl'), null];
+            $commands[] = [$command->getName(), $command->get('QueueUrl'), null, null];
+
+            return new Result;
+        },
+        function ($command) use (&$commands): Result {
+            $commands[] = [$command->getName(), $command->get('QueueUrl'), null, null];
 
             return new Result;
         },
         function ($command) use (&$commands): never {
-            $commands[] = [$command->getName(), $command->get('QueueUrl'), null];
+            $commands[] = [$command->getName(), $command->get('QueueUrl'), null, $command->get('MaxNumberOfMessages')];
 
-            throw new RuntimeException('Stop after the settled delivery.');
+            throw new RuntimeException('Stop after the settled batch.');
         },
     ]);
+    $bodies = [];
     $contexts = [];
-    $driver = snsSqsDriver(new MockHandler, $sqsHandler);
+    $driver = snsSqsDriver(new MockHandler, $sqsHandler, receiveBatchSize: 2);
 
     // --- Act ---
     $caught = null;
 
     try {
-        $driver->consume('warehouse-orders', function (string $body, TransportContext $context) use (&$contexts): void {
-            expect($body)->toBe(snsSqsMessageBody());
+        $driver->consume('warehouse-orders', function (string $body, TransportContext $context) use (&$bodies, &$contexts): void {
+            $bodies[] = $body;
             $contexts[] = $context;
         });
     } catch (ConsumptionException $exception) {
@@ -232,7 +242,8 @@ test('reuses one resolved queue URL while passing SQS context and settling the d
 
     // --- Assert ---
     expect($caught?->failure)->toBe(ConsumptionFailure::ConsumerStopped);
-    expect($contexts)->toHaveCount(1);
+    expect($bodies)->toBe([snsSqsMessageBody(), snsSqsMessageBody('B-43')]);
+    expect($contexts)->toHaveCount(2);
     expect($contexts[0]->driver)->toBe('snssqs');
     expect($contexts[0]->connectionName)->toBe('snssqs');
     expect($contexts[0]->topic)->toBe('orders');
@@ -243,10 +254,11 @@ test('reuses one resolved queue URL while passing SQS context and settling the d
     expect($contexts[0]->redelivered)->toBeTrue();
     expect($contexts[0]->orderingKey)->toBe('order:42');
     expect($commands)->toBe([
-        ['GetQueueUrl', null, '123456789012'],
-        ['ReceiveMessage', $queueUrl, null],
-        ['DeleteMessage', $queueUrl, null],
-        ['ReceiveMessage', $queueUrl, null],
+        ['GetQueueUrl', null, '123456789012', null],
+        ['ReceiveMessage', $queueUrl, null, 2],
+        ['DeleteMessage', $queueUrl, null, null],
+        ['DeleteMessage', $queueUrl, null, null],
+        ['ReceiveMessage', $queueUrl, null, 2],
     ]);
 });
 
@@ -303,7 +315,7 @@ test('omits receive attempt identity for standard queues', function (): void {
         new Result(['QueueUrl' => $queueUrl]),
         new RuntimeException('Stop after the first receive.'),
     ]);
-    $driver = snsSqsDriver(new MockHandler, $sqsHandler, fifo: false);
+    $driver = snsSqsDriver(new MockHandler, $sqsHandler, fifo: false, receiveBatchSize: 1);
 
     // --- Act ---
     try {
@@ -314,24 +326,35 @@ test('omits receive attempt identity for standard queues', function (): void {
     // --- Assert ---
     expect($sqsHandler->getLastCommand()->toArray())
         ->not->toHaveKey('ReceiveRequestAttemptId');
+    expect($sqsHandler->getLastCommand()->get('MaxNumberOfMessages'))->toBe(1);
 });
 
-test('leaves a delivery unsettled and propagates the same handoff failure', function (): void {
+test('settles only SQS deliveries whose handoffs complete', function (): void {
     // --- Arrange ---
     $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders.fifo';
     $sqsHandler = new MockHandler([
         new Result(['QueueUrl' => $queueUrl]),
-        new Result(['Messages' => [sqsDelivery()]]),
+        new Result(['Messages' => [
+            sqsDelivery('A-41', 'receipt-handle-1'),
+            sqsDelivery('A-42', 'receipt-handle-2'),
+            sqsDelivery('A-43', 'receipt-handle-3'),
+        ]]),
+        new Result,
     ]);
-    $driver = snsSqsDriver(new MockHandler, $sqsHandler);
+    $driver = snsSqsDriver(new MockHandler, $sqsHandler, receiveBatchSize: 3);
     $failure = new RuntimeException('Laravel Queue handoff failed.');
+    $handedOffReferences = [];
 
     // --- Act ---
     $caught = null;
 
     try {
-        $driver->consume('warehouse-orders', static function () use ($failure): never {
-            throw $failure;
+        $driver->consume('warehouse-orders', static function (string $body) use (&$handedOffReferences, $failure): void {
+            $handedOffReferences[] = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['payload']['reference'];
+
+            if (count($handedOffReferences) === 2) {
+                throw $failure;
+            }
         });
     } catch (Throwable $exception) {
         $caught = $exception;
@@ -339,25 +362,35 @@ test('leaves a delivery unsettled and propagates the same handoff failure', func
 
     // --- Assert ---
     expect($caught)->toBe($failure);
-    expect($sqsHandler->getLastCommand()->getName())->toBe('ReceiveMessage');
+    expect($handedOffReferences)->toBe(['A-41', 'A-42']);
+    expect($sqsHandler->getLastCommand()->getName())->toBe('DeleteMessage');
+    expect($sqsHandler->getLastCommand()->get('ReceiptHandle'))->toBe('receipt-handle-1');
 });
 
-test('reports settlement failure after a successful handoff', function (): void {
+test('stops before the SQS batch tail when settlement fails', function (): void {
     // --- Arrange ---
     $queueUrl = 'http://localhost:4566/123456789012/warehouse-orders.fifo';
     $failure = new RuntimeException('DeleteMessage failed.');
     $sqsHandler = new MockHandler([
         new Result(['QueueUrl' => $queueUrl]),
-        new Result(['Messages' => [sqsDelivery()]]),
+        new Result(['Messages' => [
+            sqsDelivery('A-41', 'receipt-handle-1'),
+            sqsDelivery('A-42', 'receipt-handle-2'),
+            sqsDelivery('A-43', 'receipt-handle-3'),
+        ]]),
+        new Result,
         $failure,
     ]);
-    $driver = snsSqsDriver(new MockHandler, $sqsHandler);
+    $driver = snsSqsDriver(new MockHandler, $sqsHandler, receiveBatchSize: 3);
+    $handedOffReferences = [];
 
     // --- Act ---
     $caught = null;
 
     try {
-        $driver->consume('warehouse-orders', static function (): void {});
+        $driver->consume('warehouse-orders', static function (string $body) use (&$handedOffReferences): void {
+            $handedOffReferences[] = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['payload']['reference'];
+        });
     } catch (ConsumptionException $exception) {
         $caught = $exception;
     }
@@ -365,8 +398,10 @@ test('reports settlement failure after a successful handoff', function (): void 
     // --- Assert ---
     expect($caught?->failure)->toBe(ConsumptionFailure::SettlementFailed);
     expect($caught?->getPrevious())->toBe($failure);
+    expect($handedOffReferences)->toBe(['A-41', 'A-42']);
     expect($sqsHandler->getLastCommand()->getName())->toBe('DeleteMessage');
     expect($sqsHandler->getLastCommand()->get('QueueUrl'))->toBe($queueUrl);
+    expect($sqsHandler->getLastCommand()->get('ReceiptHandle'))->toBe('receipt-handle-2');
 });
 
 /**
@@ -395,6 +430,7 @@ function snsSqsDriver(
     ?MockHandler $sqsHandler = null,
     bool $fifo = true,
     int $sqsRetries = 0,
+    int $receiveBatchSize = 10,
 ): SnsSqsDriver {
     config()->set('spoolrail.prefix', 'warehouse');
 
@@ -402,6 +438,7 @@ function snsSqsDriver(
         'region' => 'us-east-1',
         'account_id' => '123456789012',
         'fifo' => $fifo,
+        'receive_batch_size' => $receiveBatchSize,
     ]);
     $subscriptions = new SubscriptionRegistry;
     $subscriptions->subscribe(
@@ -420,12 +457,12 @@ function snsSqsDriver(
     );
 }
 
-function snsSqsMessageBody(): string
+function snsSqsMessageBody(string $reference = 'A-42'): string
 {
     return json_encode([
         'id' => '01890a5d-ac96-774b-bcd0-48f622f3e798',
         'type' => 'order.created',
-        'payload' => ['reference' => 'A-42'],
+        'payload' => ['reference' => $reference],
         'published_at' => '2026-07-15T14:23:08.417Z',
     ], JSON_THROW_ON_ERROR);
 }
@@ -433,13 +470,16 @@ function snsSqsMessageBody(): string
 /**
  * @return array<string, mixed>
  */
-function sqsDelivery(): array
-{
+function sqsDelivery(
+    string $reference = 'A-42',
+    string $receiptHandle = 'receipt-handle',
+    string $messageId = 'sqs-message-id',
+): array {
     return [
-        'MessageId' => 'sqs-message-id',
-        'ReceiptHandle' => 'receipt-handle',
-        'Body' => snsSqsMessageBody(),
-        'MD5OfBody' => md5(snsSqsMessageBody()),
+        'MessageId' => $messageId,
+        'ReceiptHandle' => $receiptHandle,
+        'Body' => snsSqsMessageBody($reference),
+        'MD5OfBody' => md5(snsSqsMessageBody($reference)),
         'MD5OfMessageAttributes' => '85d1348856b5682dbd05ea3f9b6886f8',
         'Attributes' => [
             'SentTimestamp' => '1784112188417',

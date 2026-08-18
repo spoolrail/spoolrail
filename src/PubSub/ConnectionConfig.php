@@ -27,6 +27,8 @@ readonly class ConnectionConfig
         $this->endpoint();
         $this->messageOrdering();
         $this->exactlyOnce();
+        $this->receiveBatchSize();
+        $this->acknowledgmentDeadline();
         $this->credentials = $this->resolveCredentials();
     }
 
@@ -61,6 +63,28 @@ readonly class ConnectionConfig
     public function exactlyOnce(): bool
     {
         return $this->boolean('exactly_once', true);
+    }
+
+    public function receiveBatchSize(): int
+    {
+        $value = $this->config['receive_batch_size'] ?? 10;
+
+        if (! is_int($value) || $value < 1 || $value > 1_000) {
+            $this->reject('receive_batch_size', 'must be an integer from 1 through 1000');
+        }
+
+        return $value;
+    }
+
+    public function acknowledgmentDeadline(): int
+    {
+        $value = $this->config['acknowledgment_deadline'] ?? 30;
+
+        if (! is_int($value) || $value < 10 || $value > 600) {
+            $this->reject('acknowledgment_deadline', 'must be an integer from 10 through 600');
+        }
+
+        return $value;
     }
 
     /**

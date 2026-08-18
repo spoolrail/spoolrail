@@ -85,6 +85,7 @@ test('plans before creating high-throughput FIFO resources and a raw fanout rout
         'FifoQueue' => 'true',
         'DeduplicationScope' => 'messageGroup',
         'FifoThroughputLimit' => 'perMessageGroupId',
+        'VisibilityTimeout' => '30',
     ]);
     expect($snsCommands[1][0])->toBe('Subscribe');
     expect($snsCommands[1][1])->toMatchArray([
@@ -236,15 +237,16 @@ test('adds a raw route to existing resources without replacing unrelated queue p
     $topology->planSync([snsSqsSubscription()], 'application-a')->apply();
 
     // --- Assert ---
-    $setPolicy = $sqsHandler->getLastCommand();
+    $setQueueAttributes = $sqsHandler->getLastCommand();
     $updatedPolicy = json_decode(
-        $setPolicy->get('Attributes')['Policy'],
+        $setQueueAttributes->get('Attributes')['Policy'],
         true,
         flags: JSON_THROW_ON_ERROR,
     );
 
-    expect($setPolicy->getName())->toBe('SetQueueAttributes');
-    expect($setPolicy->get('QueueUrl'))->toBe($queueUrl);
+    expect($setQueueAttributes->getName())->toBe('SetQueueAttributes');
+    expect($setQueueAttributes->get('QueueUrl'))->toBe($queueUrl);
+    expect($setQueueAttributes->get('Attributes')['VisibilityTimeout'])->toBe('30');
     expect($updatedPolicy['Statement'][0])->toBe($existingStatement);
     expect($updatedPolicy['Statement'][1])->toMatchArray([
         'Sid' => 'SpoolrailSnsPublish',

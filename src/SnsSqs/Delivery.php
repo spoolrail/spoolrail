@@ -22,25 +22,32 @@ class Delivery
         private ?string $messageId,
     ) {}
 
-    public static function first(mixed $messages): ?self
+    /**
+     * @return list<self>
+     */
+    public static function fromMessages(mixed $messages): array
     {
         if (! is_array($messages) || $messages === []) {
-            return null;
+            return [];
         }
 
-        $delivery = $messages[0] ?? null;
+        $deliveries = [];
 
-        if (! is_array($delivery)) {
-            throw self::invalid('SQS returned an invalid message delivery.');
+        foreach ($messages as $message) {
+            if (! is_array($message)) {
+                throw self::invalid('SQS returned an invalid message delivery.');
+            }
+
+            $deliveries[] = new self(
+                self::requiredString($message, 'Body'),
+                self::requiredString($message, 'ReceiptHandle'),
+                self::map($message, 'Attributes'),
+                self::map($message, 'MessageAttributes'),
+                self::optionalString($message, 'MessageId'),
+            );
         }
 
-        return new self(
-            self::requiredString($delivery, 'Body'),
-            self::requiredString($delivery, 'ReceiptHandle'),
-            self::map($delivery, 'Attributes'),
-            self::map($delivery, 'MessageAttributes'),
-            self::optionalString($delivery, 'MessageId'),
-        );
+        return $deliveries;
     }
 
     public function transportMessageId(): ?string
