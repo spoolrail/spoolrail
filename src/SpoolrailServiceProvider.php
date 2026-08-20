@@ -9,6 +9,7 @@ use Override;
 use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
 use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
+use Spoolrail\Spoolrail\Console\InstallCommand;
 use Spoolrail\Spoolrail\Console\PublishCommand;
 use Spoolrail\Spoolrail\Console\PublishLanesCommand;
 use Spoolrail\Spoolrail\Console\SpoolrailCommand;
@@ -33,7 +34,11 @@ class SpoolrailServiceProvider extends ServiceProvider
     {
         $this->publishes([
             __DIR__.'/../config/spoolrail.php' => config_path('spoolrail.php'),
-        ], 'spoolrail-config');
+        ], ['spoolrail-config', 'spoolrail-install']);
+
+        $this->publishes([
+            __DIR__.'/Console/stubs/subscription-routes.stub' => base_path('routes/subscriptions.php'),
+        ], 'spoolrail-install');
 
         $this->publishesMigrations([
             __DIR__.'/../database/migrations/0001_01_01_000000_create_outbox_publications_table.php' => database_path('migrations/0001_01_01_000000_create_outbox_publications_table.php'),
@@ -45,6 +50,7 @@ class SpoolrailServiceProvider extends ServiceProvider
                 ConsumeCommand::class,
                 DeleteTopicCommand::class,
                 DeleteUndeclaredSubscriptionsCommand::class,
+                InstallCommand::class,
                 PublishCommand::class,
                 PublishLanesCommand::class,
                 SyncCommand::class,
