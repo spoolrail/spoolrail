@@ -1,0 +1,11 @@
+<?php
+
+use Spoolrail\Spoolrail\Facades\Spoolrail;
+
+/*
+Spoolrail::subscribe(
+    topic: 'topic-name',
+    name: 'subscription-name',
+    handler: \App\Messages\ExampleHandler::class,
+);
+*/
