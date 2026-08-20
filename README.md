@@ -1,12 +1,12 @@
 # Spoolrail
 
-> 🚧 On the rails and picking up steam toward 1.0 release.
+[![Tests](https://github.com/spoolrail/spoolrail/actions/workflows/tests.yml/badge.svg)](https://github.com/spoolrail/spoolrail/actions/workflows/tests.yml)
 
 Message broker library made native to Laravel for building resilient distributed systems.
 
 ## Documentation
 
-See [spoolrail/docs](https://github.com/spoolrail/docs/blob/main/index.md). Better documentation coming soon.
+See [spoolrail.com](https://spoolrail.com).
 
 ## Supported Drivers
 
