@@ -44,6 +44,9 @@ jobs:
       - name: Install dependencies
         run: composer update --with "laravel/framework:${{ matrix.laravel }}" --with "orchestra/testbench:${{ matrix.testbench }}" --prefer-dist --no-interaction --no-progress
 
+      - name: Start test services
+        run: docker compose up --detach --wait
+
       - name: Run tests
         run: composer test -- --testsuite=Default
 
@@ -69,7 +72,7 @@ jobs:
         run: composer install --prefer-dist --no-interaction --no-progress
 
       - name: Install npm dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Check formatting
         run: composer format:check
