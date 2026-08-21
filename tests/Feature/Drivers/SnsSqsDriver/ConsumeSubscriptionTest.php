@@ -90,15 +90,15 @@ test('leases one SQS batch and settles only deliveries whose handoffs succeed', 
         }
     } while ($deliveriesAvailableDuringLease === [] && microtime(true) < $leaseObservationDeadline);
 
-    sleep(3);
-
+    $publishedIds = array_map(static fn (Message $message): string => $message->id, $publishedMessages);
+    $expectedRedeliveryIds = array_values(array_diff($publishedIds, [$handedOffIds[0]]));
     $redeliveries = [];
-    $redeliveryDeadline = microtime(true) + 1;
+    $redeliveryDeadline = microtime(true) + 10;
 
     do {
         foreach ($this->sqs->receiveMessage([
             'QueueUrl' => $queueUrl,
-            'MaxNumberOfMessages' => 3 - count($redeliveries),
+            'MaxNumberOfMessages' => count($expectedRedeliveryIds) - count($redeliveries),
             'WaitTimeSeconds' => 0,
             'AttributeNames' => ['All'],
         ])->get('Messages') ?? [] as $delivery) {
@@ -106,18 +106,16 @@ test('leases one SQS batch and settles only deliveries whose handoffs succeed', 
             $redeliveries[$id] = $delivery;
         }
 
-        if (count($redeliveries) < 3) {
+        if (count($redeliveries) < count($expectedRedeliveryIds)) {
             usleep(20_000);
         }
-    } while (count($redeliveries) < 3 && microtime(true) < $redeliveryDeadline);
+    } while (count($redeliveries) < count($expectedRedeliveryIds) && microtime(true) < $redeliveryDeadline);
 
     // --- Assert ---
     expect($caught)->toBe($failure);
     expect($handedOffIds)->toHaveCount(2);
     expect($deliveriesAvailableDuringLease)->toBe([]);
 
-    $publishedIds = array_map(static fn (Message $message): string => $message->id, $publishedMessages);
-    $expectedRedeliveryIds = array_values(array_diff($publishedIds, [$handedOffIds[0]]));
     $redeliveredIds = array_keys($redeliveries);
     sort($expectedRedeliveryIds);
     sort($redeliveredIds);

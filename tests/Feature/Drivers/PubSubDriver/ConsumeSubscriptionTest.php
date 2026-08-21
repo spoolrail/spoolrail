@@ -33,7 +33,9 @@ test('leases one Pub/Sub batch and settles only deliveries whose handoffs succee
         ),
     ];
     $subscription = $this->pubSubSubscription('warehouse-orders');
-    $subscription->update(['ackDeadlineSeconds' => 10]);
+    // The emulator permits a shorter lease than Pub/Sub's production minimum.
+    // Two seconds leaves time to observe the active lease without delaying the suite.
+    $subscription->update(['ackDeadlineSeconds' => 2]);
     $stagedMessages = [];
     $availabilityDeadline = microtime(true) + 3;
 
@@ -89,32 +91,30 @@ test('leases one Pub/Sub batch and settles only deliveries whose handoffs succee
         }
     } while ($messagesAvailableDuringLease === [] && microtime(true) < $leaseObservationDeadline);
 
-    sleep(11);
-
+    $publishedIds = array_map(static fn (Message $message): string => $message->id, $publishedMessages);
+    $expectedRedeliveryIds = array_values(array_diff($publishedIds, [$handedOffIds[0]]));
     $redeliveries = [];
-    $redeliveryDeadline = microtime(true) + 1;
+    $redeliveryDeadline = microtime(true) + 10;
 
     do {
         foreach ($subscription->pull([
-            'maxMessages' => 3 - count($redeliveries),
+            'maxMessages' => count($expectedRedeliveryIds) - count($redeliveries),
             'returnImmediately' => true,
         ]) as $message) {
             $id = json_decode((string) $message->data(), true, flags: JSON_THROW_ON_ERROR)['id'];
             $redeliveries[$id] = $message;
         }
 
-        if (count($redeliveries) < 3) {
+        if (count($redeliveries) < count($expectedRedeliveryIds)) {
             usleep(20_000);
         }
-    } while (count($redeliveries) < 3 && microtime(true) < $redeliveryDeadline);
+    } while (count($redeliveries) < count($expectedRedeliveryIds) && microtime(true) < $redeliveryDeadline);
 
     // --- Assert ---
     expect($caught)->toBe($failure);
     expect($handedOffIds)->toHaveCount(2);
     expect($messagesAvailableDuringLease)->toBe([]);
 
-    $publishedIds = array_map(static fn (Message $message): string => $message->id, $publishedMessages);
-    $expectedRedeliveryIds = array_values(array_diff($publishedIds, [$handedOffIds[0]]));
     $redeliveredIds = array_keys($redeliveries);
     sort($expectedRedeliveryIds);
     sort($redeliveredIds);
