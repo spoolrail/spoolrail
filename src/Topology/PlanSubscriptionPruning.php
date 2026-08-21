@@ -6,11 +6,12 @@ namespace Spoolrail\Spoolrail\Topology;
 
 use InvalidArgumentException;
 use LogicException;
+use Spoolrail\Spoolrail\Exceptions\SubscriptionPruningException;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
-class DeleteUndeclaredSubscriptions
+class PlanSubscriptionPruning
 {
     public function __construct(
         private SpoolrailManager $manager,
@@ -18,26 +19,28 @@ class DeleteUndeclaredSubscriptions
         private OwnershipPrefix $prefix,
     ) {}
 
-    /**
-     * @return list<string> Deleted physical subscription resource names
-     */
-    public function __invoke(string $connectionName, ?string $retiredPrefix): array
+    public function __invoke(string $connectionName, ?string $retiredPrefix): SubscriptionPruningPlan
     {
         $topology = $this->manager->connection($connectionName)->topology()
             ?? throw new LogicException("Spoolrail connection [$connectionName] does not provide package-managed topology.");
 
         $targetPrefix = $this->targetPrefix($retiredPrefix);
+        $declaredSubscriptions = $retiredPrefix === null
+            ? $this->declaredSubscriptions($connectionName)
+            : [];
 
-        $undeclaredResourceNames = $topology->undeclaredSubscriptionResourceNames(
-            $retiredPrefix === null ? $this->declaredSubscriptions($connectionName) : [],
-            $targetPrefix,
-        );
-
-        foreach ($undeclaredResourceNames as $resourceName) {
-            $topology->deleteSubscription($resourceName);
+        if ($retiredPrefix === null && $declaredSubscriptions === []) {
+            throw SubscriptionPruningException::noDeclaredSubscriptions($connectionName);
         }
 
-        return $undeclaredResourceNames;
+        return new SubscriptionPruningPlan(
+            $topology,
+            $targetPrefix,
+            $topology->undeclaredSubscriptionResourceNames(
+                $declaredSubscriptions,
+                $targetPrefix,
+            ),
+        );
     }
 
     private function targetPrefix(?string $retiredPrefix): string

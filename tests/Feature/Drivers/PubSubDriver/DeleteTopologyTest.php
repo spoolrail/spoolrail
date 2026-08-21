@@ -29,7 +29,7 @@ test('deletes retired-prefix subscriptions without touching the current prefix',
 
     // --- Act ---
     $exitCode = $this->artisan(
-        'spoolrail:prune-subscriptions --connection=pubsub --retired-prefix=retired-application',
+        'spoolrail:prune-subscriptions --connection=pubsub --retired-prefix=retired-application --force',
     )
         ->expectsOutputToContain('Deleted subscription resource [retired-application-old-orders].')
         ->run();

@@ -28,7 +28,7 @@ test('deletes only AWS queues and subscriptions under a retired ownership prefix
 
     // --- Act ---
     $exitCode = $this->artisan(
-        'spoolrail:prune-subscriptions --connection=snssqs --retired-prefix=retired-application',
+        'spoolrail:prune-subscriptions --connection=snssqs --retired-prefix=retired-application --force',
     )
         ->expectsOutputToContain('Deleted subscription resource [retired-application-old-orders.fifo].')
         ->run();

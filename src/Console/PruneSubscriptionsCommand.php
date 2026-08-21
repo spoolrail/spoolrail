@@ -6,22 +6,22 @@ namespace Spoolrail\Spoolrail\Console;
 
 use Illuminate\Console\Command;
 use InvalidArgumentException;
+use Spoolrail\Spoolrail\Exceptions\SubscriptionPruningException;
 use Spoolrail\Spoolrail\SpoolrailManager;
-use Spoolrail\Spoolrail\Topology\DeleteUndeclaredSubscriptions;
-use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
+use Spoolrail\Spoolrail\Topology\PlanSubscriptionPruning;
 
 class PruneSubscriptionsCommand extends Command
 {
     protected $signature = 'spoolrail:prune-subscriptions
                             {--connection= : Spoolrail connection to inspect}
-                            {--retired-prefix= : Former ownership prefix to delete completely}';
+                            {--retired-prefix= : Former ownership prefix to delete completely}
+                            {--force : Delete without confirmation}';
 
     protected $description = 'Delete application-owned subscriptions no longer declared on one connection';
 
     public function handle(
-        DeleteUndeclaredSubscriptions $deleteUndeclaredSubscriptions,
+        PlanSubscriptionPruning $planSubscriptionPruning,
         SpoolrailManager $manager,
-        OwnershipPrefix $prefix,
     ): int {
         try {
             $connectionOption = $this->filledOption(
@@ -39,16 +39,32 @@ class PruneSubscriptionsCommand extends Command
         }
 
         $connectionName = $connectionOption ?? $manager->defaultConnectionName();
-        $targetPrefix = $retiredPrefix === null
-            ? $prefix->current()
-            : $prefix->validateFormer($retiredPrefix);
 
-        $this->components->info("Inspecting connection [$connectionName] with ownership prefix [$targetPrefix].");
+        try {
+            $pruningPlan = $planSubscriptionPruning($connectionName, $retiredPrefix);
+        } catch (SubscriptionPruningException $exception) {
+            $this->components->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->components->info(
+            "Inspecting connection [$connectionName] with ownership prefix [$pruningPlan->ownershipPrefix].",
+        );
         $this->warnAboutUninspectedConnections($connectionOption, $connectionName, $manager);
 
-        $deletedResourceNames = $deleteUndeclaredSubscriptions($connectionName, $retiredPrefix);
+        if ($pruningPlan->resourceNames === []) {
+            $this->components->info('No undeclared subscription resources were found.');
 
-        $this->reportDeletions($deletedResourceNames);
+            return self::SUCCESS;
+        }
+
+        if (! $this->confirmPruning($pruningPlan->resourceNames)) {
+            return self::FAILURE;
+        }
+
+        $pruningPlan->apply();
+        $this->reportDeletions($pruningPlan->resourceNames);
 
         return self::SUCCESS;
     }
@@ -93,17 +109,40 @@ class PruneSubscriptionsCommand extends Command
     }
 
     /**
-     * @param  list<string>  $deletedResourceNames
+     * @param  list<string>  $resourceNames
      */
-    private function reportDeletions(array $deletedResourceNames): void
+    private function confirmPruning(array $resourceNames): bool
     {
-        if ($deletedResourceNames === []) {
-            $this->components->info('No undeclared subscription resources were found.');
+        $count = count($resourceNames);
+        $resourceLabel = $count === 1 ? 'resource' : 'resources';
 
-            return;
+        $this->components->warn(
+            "Pruning will permanently delete $count subscription $resourceLabel and discard any messages waiting for delivery.",
+        );
+        $this->components->bulletList(array_map(
+            static fn (string $resourceName): string => "[$resourceName]",
+            $resourceNames,
+        ));
+
+        if ($this->option('force') === true) {
+            return true;
         }
 
-        foreach ($deletedResourceNames as $resourceName) {
+        if ($this->components->confirm('Delete the displayed subscription resources?', false)) {
+            return true;
+        }
+
+        $this->components->warn('Subscription pruning cancelled. Use [--force] to skip confirmation.');
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $resourceNames
+     */
+    private function reportDeletions(array $resourceNames): void
+    {
+        foreach ($resourceNames as $resourceName) {
             $this->components->info("Deleted subscription resource [$resourceName].");
         }
     }

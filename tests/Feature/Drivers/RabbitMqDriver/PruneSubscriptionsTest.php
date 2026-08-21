@@ -13,6 +13,8 @@ test('warns when another managed connection is not inspected', function (): void
     // --- Arrange ---
     config()->set('spoolrail.default', 'rabbitmq');
     $this->addRabbitMqConnection('secondary');
+    Spoolrail::subscribe('orders', 'rabbit-orders', RecordingMessageHandler::class)
+        ->onConnection('rabbitmq');
 
     // --- Act ---
     $exitCode = $this->artisan('spoolrail:prune-subscriptions')
@@ -42,6 +44,7 @@ test('deletes only undeclared subscriptions from an explicitly selected RabbitMQ
         ->expectsOutputToContain(
             "Inspecting connection [rabbitmq] with ownership prefix [$prefix].",
         )
+        ->expectsConfirmation('Delete the displayed subscription resources?', 'yes')
         ->expectsOutputToContain("Deleted subscription resource [$undeclaredQueueName].")
         ->run();
 
@@ -62,7 +65,7 @@ test('deletes every RabbitMQ subscription under an explicit retired prefix', fun
 
     // --- Act ---
     $exitCode = $this->artisan(
-        "spoolrail:prune-subscriptions --connection=rabbitmq --retired-prefix=$retiredPrefix",
+        "spoolrail:prune-subscriptions --connection=rabbitmq --retired-prefix=$retiredPrefix --force",
     )->run();
 
     // --- Assert ---

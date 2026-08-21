@@ -12,7 +12,7 @@ Spoolrail is a Laravel message broker package with a transport-neutral API for p
 
 **Keep outbox concurrency lane-scoped**: Dispatch may overlap only distinct stored connection-and-topic lanes. One lane remains commit-visible oldest first and a failed head still blocks its own later rows, so process allocation must never give a lane more than one owner within a run.
 
-**Keep topology explicit**: Subscription declarations are the sole topology source. Publishing and consumption never create or reconcile resources. Synchronization preflights every referenced managed connection before applying any plan, and deletion remains explicit.
+**Keep topology explicit**: Subscription declarations are the sole topology source. Publishing and consumption never create or reconcile resources. Synchronization preflights every referenced managed connection before applying any plan. Deletion remains a separate explicit operation.
 
 **Topology recovery restarts reconciliation**: Recover non-destructive discovery and apply failures through one cross-driver synchronization retry, so recovery re-reads broker state instead of compounding hidden client attempts or continuing a stale plan. Destructive topology commands remain outside this policy.
 
