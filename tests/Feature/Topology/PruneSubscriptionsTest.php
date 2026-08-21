@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Console\Command;
 
 test('rejects blank option values', function (array $parameters, string $message): void {
-    $exitCode = $this->artisan('spoolrail:delete-undeclared-subscriptions', $parameters)
+    $exitCode = $this->artisan('spoolrail:prune-subscriptions', $parameters)
         ->expectsOutputToContain($message)
         ->run();
 
@@ -22,7 +22,7 @@ test('rejects blank option values', function (array $parameters, string $message
 ]);
 
 test('rejects a connection without package-managed topology', function (): void {
-    expect(fn () => $this->artisan('spoolrail:delete-undeclared-subscriptions', [
+    expect(fn () => $this->artisan('spoolrail:prune-subscriptions', [
         '--connection' => 'array',
     ])->run())->toThrow(
         LogicException::class,

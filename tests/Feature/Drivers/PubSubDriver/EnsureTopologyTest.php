@@ -21,7 +21,7 @@ test('synchronizes ordered exactly-once fanout and preserves publication metadat
         ->onConnection('pubsub');
 
     // --- Act ---
-    $firstSync = $this->artisan('spoolrail:sync')->run();
+    $firstSync = $this->artisan('spoolrail:ensure-topology')->run();
     $published = Spoolrail::connection('pubsub')->publish(
         'orders',
         Message::make('order.created', ['reference' => 'A-42']),
@@ -56,14 +56,14 @@ test('reconciles the Pub/Sub acknowledgment deadline in place', function (): voi
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
     $subscriptionName = $this->pubSubSubscription('warehouse-orders')->name();
 
     config()->set('spoolrail.connections.pubsub.acknowledgment_deadline', 45);
     app(SpoolrailManager::class)->forgetConnection('pubsub');
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:sync')->run();
+    $exitCode = $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Assert ---
     $subscription = $this->pubSubSubscription('warehouse-orders');
@@ -77,7 +77,7 @@ test('uses one ordered Pub/Sub lane when publications omit an application key', 
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Act ---
     Spoolrail::connection('pubsub')->publish(
@@ -118,7 +118,7 @@ test('creates unordered at-least-once subscriptions without injecting a default 
     config()->set('spoolrail.connections.pubsub.exactly_once', false);
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Act ---
     Spoolrail::connection('pubsub')->publish(
@@ -175,7 +175,7 @@ test('fails immutable ordering preflight before creating or updating resources',
 
     // --- Act ---
     try {
-        $this->artisan('spoolrail:sync')->run();
+        $this->artisan('spoolrail:ensure-topology')->run();
     } catch (TopologyPreflightException $exception) {
         $caught = $exception;
     }
@@ -205,7 +205,7 @@ test('reconciles exactly-once delivery in place when ordering is compatible', fu
         ->onConnection('pubsub');
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:sync')->run();
+    $exitCode = $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Assert ---
     expect($exitCode)->toBe(0);

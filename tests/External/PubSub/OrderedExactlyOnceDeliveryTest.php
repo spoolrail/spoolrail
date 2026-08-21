@@ -20,7 +20,7 @@ test('hands off ordered deliveries through exactly-once settlement', function ()
     )->onConnection('pubsub');
 
     // --- Act ---
-    $sync = $this->artisan('spoolrail:sync')->run();
+    $sync = $this->artisan('spoolrail:ensure-topology')->run();
     $connection = Spoolrail::connection('pubsub');
     $first = $connection->publish(
         $this->externalTopic,

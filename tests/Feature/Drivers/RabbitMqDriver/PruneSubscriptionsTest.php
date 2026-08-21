@@ -15,7 +15,7 @@ test('warns when another managed connection is not inspected', function (): void
     $this->addRabbitMqConnection('secondary');
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:delete-undeclared-subscriptions')
+    $exitCode = $this->artisan('spoolrail:prune-subscriptions')
         ->expectsOutputToContain('Other potentially managed connections were not inspected: snssqs, pubsub, secondary.')
         ->run();
 
@@ -32,12 +32,12 @@ test('deletes only undeclared subscriptions from an explicitly selected RabbitMQ
     Spoolrail::subscribe('orders', 'old-orders', RecordingMessageHandler::class);
     Spoolrail::subscribe('orders', 'rabbit-orders', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
     $this->declareRabbitMqQueue($undeclaredQueueName);
 
     // --- Act ---
     $exitCode = $this->artisan(
-        'spoolrail:delete-undeclared-subscriptions --connection=rabbitmq',
+        'spoolrail:prune-subscriptions --connection=rabbitmq',
     )
         ->expectsOutputToContain(
             "Inspecting connection [rabbitmq] with ownership prefix [$prefix].",
@@ -62,7 +62,7 @@ test('deletes every RabbitMQ subscription under an explicit retired prefix', fun
 
     // --- Act ---
     $exitCode = $this->artisan(
-        "spoolrail:delete-undeclared-subscriptions --connection=rabbitmq --retired-prefix=$retiredPrefix",
+        "spoolrail:prune-subscriptions --connection=rabbitmq --retired-prefix=$retiredPrefix",
     )->run();
 
     // --- Assert ---
@@ -74,7 +74,7 @@ test('refuses to delete the current ownership prefix as retired', function (): v
     $prefix = app(OwnershipPrefix::class)->current();
 
     $action = fn () => $this->artisan(
-        "spoolrail:delete-undeclared-subscriptions --connection=rabbitmq --retired-prefix=$prefix",
+        "spoolrail:prune-subscriptions --connection=rabbitmq --retired-prefix=$prefix",
     )->run();
 
     expect($action)->toThrow(InvalidArgumentException::class);

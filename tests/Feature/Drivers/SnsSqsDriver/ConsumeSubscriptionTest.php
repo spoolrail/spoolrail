@@ -16,7 +16,7 @@ test('leases one SQS batch and settles only deliveries whose handoffs succeed', 
     config()->set('spoolrail.connections.snssqs.receive_batch_size', 3);
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('snssqs');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     $queueUrl = $this->sqsQueueUrl('warehouse-orders', false);
     $this->sqs->setQueueAttributes([

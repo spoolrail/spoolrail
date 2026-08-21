@@ -19,14 +19,14 @@ test('synchronizes high-throughput FIFO topology and raw fanout', function (): v
         ->onConnection('snssqs');
 
     // --- Act ---
-    $firstSync = $this->artisan('spoolrail:sync')->run();
+    $firstSync = $this->artisan('spoolrail:ensure-topology')->run();
     $published = Spoolrail::connection('snssqs')->publish(
         'orders',
         Message::make('order.created', ['reference' => 'A-42']),
         ['correlation-id' => 'A-42'],
         orderingKey: 'order:42',
     );
-    $secondSync = $this->artisan('spoolrail:sync')->run();
+    $secondSync = $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Assert ---
     $topic = $this->snsTopicAttributes('orders');
@@ -60,14 +60,14 @@ test('reconciles the SQS visibility timeout in place', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('snssqs');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
     $queueUrl = $this->sqsQueueUrl('warehouse-orders');
 
     config()->set('spoolrail.connections.snssqs.visibility_timeout', 45);
     app(SpoolrailManager::class)->forgetConnection('snssqs');
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:sync')->run();
+    $exitCode = $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Assert ---
     expect($exitCode)->toBe(0);
@@ -82,7 +82,7 @@ test('synchronizes standard topology and propagates a supplied fair-queue group'
         ->onConnection('snssqs');
 
     // --- Act ---
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
     Spoolrail::connection('snssqs')->publish(
         'orders',
         Message::make('order.created', ['reference' => 'A-42']),
@@ -111,7 +111,7 @@ test('rejects a standard application queue before creating FIFO replacement topo
 
     // --- Act ---
     try {
-        $this->artisan('spoolrail:sync')->run();
+        $this->artisan('spoolrail:ensure-topology')->run();
     } catch (TopologyPreflightException $exception) {
         $caught = $exception;
     }
@@ -131,7 +131,7 @@ test('allows standard and FIFO topics to coexist', function (): void {
         ->onConnection('snssqs');
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:sync')->run();
+    $exitCode = $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Assert ---
     expect($exitCode)->toBe(0);

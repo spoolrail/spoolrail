@@ -7,9 +7,9 @@ namespace Spoolrail\Spoolrail\Console;
 use Illuminate\Console\Command;
 use Spoolrail\Spoolrail\Topology\SyncTopology;
 
-class SyncCommand extends Command
+class EnsureTopologyCommand extends Command
 {
-    protected $signature = 'spoolrail:sync';
+    protected $signature = 'spoolrail:ensure-topology';
 
     protected $description = 'Validate and create declared Spoolrail topology';
 

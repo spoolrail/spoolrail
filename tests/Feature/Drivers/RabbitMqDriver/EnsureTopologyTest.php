@@ -25,7 +25,7 @@ test('synchronizes every referenced RabbitMQ connection after preflight', functi
     Spoolrail::subscribe('orders', 'local-orders', RecordingMessageHandler::class);
 
     // --- Act ---
-    $exitCode = $this->artisan('spoolrail:sync')
+    $exitCode = $this->artisan('spoolrail:ensure-topology')
         ->expectsOutputToContain('Synchronized topology for connection [rabbitmq].')
         ->expectsOutputToContain('Synchronized topology for connection [secondary].')
         ->expectsOutputToContain('Connection [array] has no package-managed topology and was not changed.')
@@ -57,7 +57,7 @@ test('reports every RabbitMQ preflight failure before applying a valid plan', fu
     $failure = null;
 
     try {
-        $this->artisan('spoolrail:sync')->run();
+        $this->artisan('spoolrail:ensure-topology')->run();
     } catch (TopologyPreflightException $exception) {
         $failure = $exception;
     }
@@ -80,12 +80,12 @@ test('accepts repeated synchronization without replacing an existing quorum queu
         ->onConnection('rabbitmq');
 
     // --- Act ---
-    $firstSync = $this->artisan('spoolrail:sync')->run();
+    $firstSync = $this->artisan('spoolrail:ensure-topology')->run();
     $published = Spoolrail::connection('rabbitmq')->publish(
         'orders',
         Message::make('order.created', ['reference' => 'A-42']),
     );
-    $secondSync = $this->artisan('spoolrail:sync')->run();
+    $secondSync = $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Assert ---
     $queue = $this->rabbitMqQueue($queueName);

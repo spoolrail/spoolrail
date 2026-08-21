@@ -14,7 +14,7 @@ test('deletes retired-prefix subscriptions without touching the current prefix',
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'current-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     $retiredSubscription = new Subscription(
         'orders',
@@ -29,7 +29,7 @@ test('deletes retired-prefix subscriptions without touching the current prefix',
 
     // --- Act ---
     $exitCode = $this->artisan(
-        'spoolrail:delete-undeclared-subscriptions --connection=pubsub --retired-prefix=retired-application',
+        'spoolrail:prune-subscriptions --connection=pubsub --retired-prefix=retired-application',
     )
         ->expectsOutputToContain('Deleted subscription resource [retired-application-old-orders].')
         ->run();
@@ -44,7 +44,7 @@ test('refuses to delete a topic while it has subscriptions', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Act & Assert ---
     expect(fn () => $this->artisan(

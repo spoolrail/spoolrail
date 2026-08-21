@@ -20,7 +20,7 @@ test('returns every unsettled prefetched RabbitMQ delivery after a failed handof
 
     Spoolrail::subscribe('orders', 'warehouse', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
     foreach (['first', 'second', 'third', 'fourth'] as $reference) {
         Spoolrail::connection('rabbitmq')->publish(
             'orders',

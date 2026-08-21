@@ -24,7 +24,7 @@ test('publishes through the next available RabbitMQ host to every subscription',
         ->onConnection('rabbitmq');
     Spoolrail::subscribe('orders', 'analytics', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
     $headers = [
         str_repeat('a', 128) => str_repeat('é', 512),
         'header-2' => 'value-2',

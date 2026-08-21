@@ -8,12 +8,12 @@ use Illuminate\Support\ServiceProvider;
 use Override;
 use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
-use Spoolrail\Spoolrail\Console\DeleteUndeclaredSubscriptionsCommand;
+use Spoolrail\Spoolrail\Console\EnsureTopologyCommand;
 use Spoolrail\Spoolrail\Console\InstallCommand;
+use Spoolrail\Spoolrail\Console\PruneSubscriptionsCommand;
 use Spoolrail\Spoolrail\Console\PublishCommand;
 use Spoolrail\Spoolrail\Console\PublishLanesCommand;
 use Spoolrail\Spoolrail\Console\SpoolrailCommand;
-use Spoolrail\Spoolrail\Console\SyncCommand;
 use Spoolrail\Spoolrail\Console\TerminateCommand;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 
@@ -49,11 +49,11 @@ class SpoolrailServiceProvider extends ServiceProvider
                 SpoolrailCommand::class,
                 ConsumeCommand::class,
                 DeleteTopicCommand::class,
-                DeleteUndeclaredSubscriptionsCommand::class,
+                EnsureTopologyCommand::class,
                 InstallCommand::class,
+                PruneSubscriptionsCommand::class,
                 PublishCommand::class,
                 PublishLanesCommand::class,
-                SyncCommand::class,
                 TerminateCommand::class,
             ]);
         }

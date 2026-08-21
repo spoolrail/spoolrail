@@ -22,7 +22,7 @@ test('preserves FIFO order while suppressing a repeated publication', function (
     $secondMessage = Message::make('order.created', ['sequence' => 'second']);
 
     // --- Act ---
-    $sync = $this->artisan('spoolrail:sync')->run();
+    $sync = $this->artisan('spoolrail:ensure-topology')->run();
     $connection = Spoolrail::connection('snssqs');
     $first = $connection->publish(
         $this->externalTopic,

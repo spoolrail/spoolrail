@@ -9,11 +9,11 @@ use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
 uses(InteractsWithSnsSqs::class);
 
-test('deletes only undeclared AWS receive resources under a retired ownership prefix', function (): void {
+test('deletes only AWS queues and subscriptions under a retired ownership prefix', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'current-orders', RecordingMessageHandler::class)
         ->onConnection('snssqs');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     $retiredSubscription = new Subscription(
         'orders',
@@ -28,7 +28,7 @@ test('deletes only undeclared AWS receive resources under a retired ownership pr
 
     // --- Act ---
     $exitCode = $this->artisan(
-        'spoolrail:delete-undeclared-subscriptions --connection=snssqs --retired-prefix=retired-application',
+        'spoolrail:prune-subscriptions --connection=snssqs --retired-prefix=retired-application',
     )
         ->expectsOutputToContain('Deleted subscription resource [retired-application-old-orders.fifo].')
         ->run();

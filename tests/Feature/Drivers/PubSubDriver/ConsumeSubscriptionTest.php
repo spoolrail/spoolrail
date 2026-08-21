@@ -16,7 +16,7 @@ test('leases one Pub/Sub batch and settles only deliveries whose handoffs succee
     config()->set('spoolrail.connections.pubsub.receive_batch_size', 3);
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('pubsub');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     $publishedMessages = [
         Spoolrail::connection('pubsub')->publish(

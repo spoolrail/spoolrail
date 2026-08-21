@@ -13,7 +13,7 @@ test('deletes an AWS topic only after its receive route has been explicitly reti
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('snssqs');
-    $this->artisan('spoolrail:sync')->run();
+    $this->artisan('spoolrail:ensure-topology')->run();
 
     // --- Act ---
     $whileSubscribed = fn () => $this->artisan(

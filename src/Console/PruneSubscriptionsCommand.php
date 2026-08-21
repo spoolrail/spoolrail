@@ -10,13 +10,13 @@ use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\Topology\DeleteUndeclaredSubscriptions;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
-class DeleteUndeclaredSubscriptionsCommand extends Command
+class PruneSubscriptionsCommand extends Command
 {
-    protected $signature = 'spoolrail:delete-undeclared-subscriptions
+    protected $signature = 'spoolrail:prune-subscriptions
                             {--connection= : Spoolrail connection to inspect}
                             {--retired-prefix= : Former ownership prefix to delete completely}';
 
-    protected $description = 'Delete application-owned receive resources no longer declared on one connection';
+    protected $description = 'Delete application-owned subscriptions no longer declared on one connection';
 
     public function handle(
         DeleteUndeclaredSubscriptions $deleteUndeclaredSubscriptions,
