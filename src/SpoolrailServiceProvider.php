@@ -10,6 +10,7 @@ use Spoolrail\Spoolrail\Console\ConsumeCommand;
 use Spoolrail\Spoolrail\Console\DeleteTopicCommand;
 use Spoolrail\Spoolrail\Console\EnsureTopologyCommand;
 use Spoolrail\Spoolrail\Console\InstallCommand;
+use Spoolrail\Spoolrail\Console\MakeHandlerCommand;
 use Spoolrail\Spoolrail\Console\PruneSubscriptionsCommand;
 use Spoolrail\Spoolrail\Console\PublishCommand;
 use Spoolrail\Spoolrail\Console\PublishLanesCommand;
@@ -51,6 +52,7 @@ class SpoolrailServiceProvider extends ServiceProvider
                 DeleteTopicCommand::class,
                 EnsureTopologyCommand::class,
                 InstallCommand::class,
+                MakeHandlerCommand::class,
                 PruneSubscriptionsCommand::class,
                 PublishCommand::class,
                 PublishLanesCommand::class,
