@@ -60,11 +60,6 @@ class ConsumerException extends RuntimeException implements SpoolrailException
         return new self('Spoolrail could not store the consumer termination signal.');
     }
 
-    public static function subscriptionStoppedUnexpectedly(string $subscription): self
-    {
-        return new self("Spoolrail subscription [$subscription] stopped consuming unexpectedly.");
-    }
-
     public static function subscriptionFailed(string $subscription, Throwable $previous): self
     {
         return new self(
@@ -73,21 +68,36 @@ class ConsumerException extends RuntimeException implements SpoolrailException
         );
     }
 
-    public static function subscriptionProcessCouldNotStart(
-        string $subscription,
+    /** @param  non-empty-list<string>  $subscriptionNames */
+    public static function consumerProcessFailed(
+        array $subscriptionNames,
         Throwable $previous,
     ): self {
         return new self(
-            "Spoolrail could not start the consumer process for subscription [$subscription].",
+            'Spoolrail consumer process for subscriptions ['.implode(', ', $subscriptionNames).'] failed.',
             previous: $previous,
         );
     }
 
-    public static function subscriptionProcessExitedUnexpectedly(
-        string $subscription,
+    /** @param  non-empty-list<string>  $subscriptionNames */
+    public static function consumerProcessCouldNotStart(
+        array $subscriptionNames,
+        Throwable $previous,
+    ): self {
+        return new self(
+            'Spoolrail could not start the consumer process for subscriptions ['.implode(', ', $subscriptionNames).'].',
+            previous: $previous,
+        );
+    }
+
+    /** @param  non-empty-list<string>  $subscriptionNames */
+    public static function consumerProcessExitedUnexpectedly(
+        array $subscriptionNames,
         string $reason,
     ): self {
-        return new self("Spoolrail subscription [$subscription] process $reason.");
+        return new self(
+            'Spoolrail consumer process for subscriptions ['.implode(', ', $subscriptionNames)."] $reason.",
+        );
     }
 
     public static function terminationSignalCouldNotBeRead(Throwable $previous): self

@@ -6,22 +6,24 @@ namespace Spoolrail\Spoolrail\Drivers;
 
 use Closure;
 use Spoolrail\Spoolrail\Contracts\Driver;
+use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
-use Spoolrail\Spoolrail\TransportContext;
-use Throwable;
 
+/**
+ * @phpstan-type MessageRecord array{
+ *     body: string,
+ *     headers: array<string, string>,
+ *     redelivered: bool
+ * }
+ * @phpstan-type Receipt array{subscription: string, message: MessageRecord}
+ *
+ * @implements Driver<Receipt>
+ */
 class ArrayDriver implements Driver
 {
-    /**
-     * @var array<string, list<array{
-     *     topic: string,
-     *     body: string,
-     *     headers: array<string, string>,
-     *     redelivered: bool
-     * }>>
-     */
-    private array $deliveries = [];
+    /** @var array<string, list<MessageRecord>> */
+    private array $messages = [];
 
     public function __construct(
         private string $connectionName,
@@ -39,8 +41,7 @@ class ArrayDriver implements Driver
         ?string $orderingKey = null,
     ): void {
         foreach ($this->matchingSubscriptions($topic) as $subscription) {
-            $this->deliveries[$subscription->name()][] = [
-                'topic' => $topic,
+            $this->messages[$subscription->name()][] = [
                 'body' => $body,
                 'headers' => $headers,
                 'redelivered' => false,
@@ -48,64 +49,68 @@ class ArrayDriver implements Driver
         }
     }
 
-    /**
-     * @param  Closure(string, TransportContext): void  $handoff
-     *
-     * @throws Throwable
-     */
-    public function consume(string $subscription, Closure $handoff): void
-    {
-        while (($delivery = $this->reserveNextDelivery($subscription)) !== null) {
-            try {
-                $handoff(
-                    $delivery['body'],
-                    new TransportContext(
-                        driver: 'array',
-                        connectionName: $this->connectionName,
-                        topic: $delivery['topic'],
-                        subscription: $subscription,
-                        headers: $delivery['headers'],
-                        redelivered: $delivery['redelivered'],
-                    ),
-                );
-            } catch (Throwable $exception) {
-                $this->release($subscription, $delivery);
+    public function receive(
+        string $subscription,
+        Closure $received,
+        Closure $fail,
+    ): void {
+        $message = $this->reserveNextMessage($subscription);
 
-                throw $exception;
-            }
+        if ($message === null) {
+            $received([]);
+
+            return;
         }
+
+        $received([new Delivery(
+            body: $message['body'],
+            receipt: [
+                'subscription' => $subscription,
+                'message' => $message,
+            ],
+            headers: $message['headers'],
+            redelivered: $message['redelivered'],
+        )]);
     }
 
     /**
-     * @return array{
-     *     topic: string,
-     *     body: string,
-     *     headers: array<string, string>,
-     *     redelivered: bool
-     * }|null
+     * @param  Delivery<Receipt>  $delivery
      */
-    private function reserveNextDelivery(string $subscription): ?array
+    public function acknowledge(
+        Delivery $delivery,
+        Closure $acknowledged,
+        Closure $fail,
+    ): void {
+        $acknowledged();
+    }
+
+    /**
+     * @param  Delivery<Receipt>  $delivery
+     */
+    public function release(
+        Delivery $delivery,
+        Closure $released,
+        Closure $fail,
+    ): void {
+        $message = $delivery->receipt['message'];
+        $message['redelivered'] = true;
+
+        array_unshift(
+            $this->messages[$delivery->receipt['subscription']],
+            $message,
+        );
+
+        $released();
+    }
+
+    /** @return MessageRecord|null */
+    private function reserveNextMessage(string $subscription): ?array
     {
-        if (($this->deliveries[$subscription] ?? []) === []) {
+        if (($this->messages[$subscription] ?? []) === []) {
             return null;
         }
 
-        return array_shift($this->deliveries[$subscription]);
-    }
-
-    /**
-     * @param  array{
-     *     topic: string,
-     *     body: string,
-     *     headers: array<string, string>,
-     *     redelivered: bool
-     * }  $delivery
-     */
-    private function release(string $subscription, array $delivery): void
-    {
-        $delivery['redelivered'] = true;
-
-        array_unshift($this->deliveries[$subscription], $delivery);
+        return array_shift($this->messages[$subscription]);
     }
 
     /**

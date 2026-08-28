@@ -8,12 +8,15 @@ use Carbon\CarbonImmutable;
 use Closure;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Connection\AbstractConnection;
+use PhpAmqpLib\Exception\AMQPTimeoutException;
 use PhpAmqpLib\Message\AMQPMessage;
 use PhpAmqpLib\Wire\AMQPTable;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
+use Spoolrail\Spoolrail\Contracts\CanWaitForConsumerIo;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
+use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Exceptions\ConsumptionException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\Exceptions\SpoolrailException;
@@ -22,22 +25,38 @@ use Spoolrail\Spoolrail\RabbitMq\Connector;
 use Spoolrail\Spoolrail\RabbitMq\ResourceName;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
-use Spoolrail\Spoolrail\TransportContext;
 use Throwable;
 
-class RabbitMqDriver implements CanClose, CanManageTopology, Driver
+/**
+ * @implements Driver<AMQPMessage>
+ */
+class RabbitMqDriver implements CanClose, CanManageTopology, CanWaitForConsumerIo, Driver
 {
     private ?AbstractConnection $amqpConnection = null;
 
     private ?AMQPChannel $publisherChannel = null;
 
-    private ?Throwable $handoffFailure = null;
+    private ?AMQPChannel $consumerChannel = null;
+
+    /**
+     * @var array<string, array{received: Closure, fail: Closure}>
+     */
+    private array $pendingReceives = [];
+
+    /**
+     * @var array<string, list<AMQPMessage>>
+     */
+    private array $bufferedMessages = [];
+
+    /** @var array<string, true> */
+    private array $registeredConsumers = [];
 
     public function __construct(
         private ConnectionConfig $config,
         private Connector $connector,
         private CanManageTopology $topology,
         private OwnershipPrefix $ownershipPrefix,
+        private int $idleWaitMilliseconds = 100,
     ) {}
 
     public function __destruct()
@@ -95,41 +114,78 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
         }
     }
 
-    /**
-     * @param  Closure(string, TransportContext): void  $handoff
-     *
-     * @throws Throwable
-     */
-    public function consume(string $subscription, Closure $handoff): void
+    public function receive(
+        string $subscription,
+        Closure $received,
+        Closure $fail,
+    ): void {
+        $buffered = $this->bufferedMessages[$subscription] ?? [];
+
+        if (($message = array_shift($buffered)) instanceof AMQPMessage) {
+            $this->bufferedMessages[$subscription] = $buffered;
+            $received([$this->delivery($message)]);
+
+            return;
+        }
+
+        $this->pendingReceives[$subscription] = ['received' => $received, 'fail' => $fail];
+        $this->ensureConsumerRegistered($subscription);
+    }
+
+    private function ensureConsumerRegistered(string $subscription): void
     {
-        $queue = ResourceName::queue($this->ownershipPrefix->current(), $subscription);
-        $this->handoffFailure = null;
+        if (isset($this->registeredConsumers[$subscription])) {
+            return;
+        }
 
         try {
-            $channel = $this->amqpConnection()->channel();
-            $channel->basic_qos(0, $this->config->prefetch(), false);
-            $channel->basic_consume(
-                $queue,
-                '',
-                false,
-                false,
-                false,
-                false,
-                function (AMQPMessage $delivery) use ($handoff, $subscription): void {
-                    $this->handoff($handoff, $delivery, $subscription);
-                    $this->acknowledge($delivery);
-                },
-            );
-
-            $channel->consume();
-
-            throw ConsumptionException::consumerStopped();
+            $this->registerConsumer($subscription);
         } catch (Throwable $exception) {
             $this->discardConnection();
 
-            if ($exception === $this->handoffFailure || $exception instanceof SpoolrailException) {
+            if ($exception instanceof SpoolrailException) {
                 throw $exception;
             }
+
+            throw ConsumptionException::consumerStopped($exception);
+        }
+    }
+
+    /**
+     * @param  Delivery<AMQPMessage>  $delivery
+     */
+    public function acknowledge(
+        Delivery $delivery,
+        Closure $acknowledged,
+        Closure $fail,
+    ): void {
+        $delivery->receipt->ack();
+        $acknowledged();
+    }
+
+    /**
+     * @param  Delivery<AMQPMessage>  $delivery
+     */
+    public function release(
+        Delivery $delivery,
+        Closure $released,
+        Closure $fail,
+    ): void {
+        $delivery->receipt->nack(true);
+        $released();
+    }
+
+    public function waitForConsumerIo(): void
+    {
+        try {
+            $this->consumerChannel()->wait(
+                non_blocking: false,
+                timeout: $this->idleWaitMilliseconds / 1_000,
+            );
+        } catch (AMQPTimeoutException) {
+            // The scheduler uses this bounded idle return to revisit every lane.
+        } catch (Throwable $exception) {
+            $this->discardConnection();
 
             throw ConsumptionException::consumerStopped($exception);
         }
@@ -192,40 +248,74 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
         return $this->amqpConnection ??= $this->connector->connect($this->config);
     }
 
-    /**
-     * @param  Closure(string, TransportContext): void  $handoff
-     */
-    private function handoff(
-        Closure $handoff,
-        AMQPMessage $delivery,
-        string $subscription,
-    ): void {
-        try {
-            $handoff(
-                $delivery->getBody(),
-                new TransportContext(
-                    driver: 'rabbitmq',
-                    connectionName: $this->config->connectionName,
-                    topic: (string) $delivery->getExchange(),
-                    subscription: $subscription,
-                    headers: $this->headers($delivery),
-                    redelivered: $delivery->isRedelivered(),
-                ),
-            );
-        } catch (Throwable $exception) {
-            $this->handoffFailure = $exception;
+    private function registerConsumer(string $subscription): void
+    {
+        $queue = ResourceName::queue($this->ownershipPrefix->current(), $subscription);
+        $channel = $this->consumerChannel();
+        $channel->basic_consume(
+            $queue,
+            '',
+            false,
+            false,
+            false,
+            false,
+            function (AMQPMessage $message) use ($subscription): void {
+                $this->receiveMessage($subscription, $message);
+            },
+        );
 
-            throw $exception;
-        }
+        $this->registeredConsumers[$subscription] = true;
     }
 
-    private function acknowledge(AMQPMessage $delivery): void
+    private function consumerChannel(): AMQPChannel
     {
-        try {
-            $delivery->ack();
-        } catch (Throwable $exception) {
-            throw ConsumptionException::settlementFailed($exception);
+        if ($this->consumerChannel instanceof AMQPChannel) {
+            return $this->consumerChannel;
         }
+
+        $channel = $this->amqpConnection()->channel();
+        $channel->basic_qos(0, $this->config->prefetch(), false);
+
+        return $this->consumerChannel = $channel;
+    }
+
+    private function receiveMessage(string $subscription, AMQPMessage $message): void
+    {
+        $operation = $this->pendingReceives[$subscription] ?? null;
+
+        if ($operation === null) {
+            $this->bufferedMessages[$subscription][] = $message;
+
+            return;
+        }
+
+        unset($this->pendingReceives[$subscription]);
+        ($operation['received'])([$this->delivery($message)]);
+    }
+
+    /**
+     * @return Delivery<AMQPMessage>
+     */
+    private function delivery(AMQPMessage $message): Delivery
+    {
+        $messageId = $this->property($message, 'message_id');
+        $timestamp = $this->property($message, 'timestamp');
+
+        return new Delivery(
+            body: $message->getBody(),
+            receipt: $message,
+            headers: $this->headers($message),
+            transportMessageId: is_string($messageId) ? $messageId : null,
+            transportPublishedAt: is_int($timestamp)
+                ? CarbonImmutable::createFromTimestampUTC($timestamp)
+                : null,
+            redelivered: $message->isRedelivered(),
+        );
+    }
+
+    private function property(AMQPMessage $message, string $name): mixed
+    {
+        return $message->has($name) ? $message->get($name) : null;
     }
 
     /**
@@ -255,13 +345,13 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
     /**
      * @return array<string, mixed>
      */
-    private function headers(AMQPMessage $delivery): array
+    private function headers(AMQPMessage $message): array
     {
-        if (! $delivery->has('application_headers')) {
+        if (! $message->has('application_headers')) {
             return [];
         }
 
-        $headers = $delivery->get('application_headers');
+        $headers = $message->get('application_headers');
 
         if (! $headers instanceof AMQPTable) {
             return [];
@@ -306,6 +396,10 @@ class RabbitMqDriver implements CanClose, CanManageTopology, Driver
         $amqpConnection = $this->amqpConnection;
         $this->amqpConnection = null;
         $this->publisherChannel = null;
+        $this->consumerChannel = null;
+        $this->pendingReceives = [];
+        $this->bufferedMessages = [];
+        $this->registeredConsumers = [];
 
         if (! $amqpConnection instanceof AbstractConnection) {
             return;

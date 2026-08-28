@@ -14,49 +14,50 @@ class ConsumerSupervisor
 {
     private const float LOOP_PAUSE_SECONDS = 0.1;
 
-    private const int TERMINATION_POLL_SECONDS = 1;
+    private const int TERMINATION_POLL_INTERVAL_SECONDS = 1;
 
-    private const int SHUTDOWN_SECONDS = 10;
+    private const int SHUTDOWN_TIMEOUT_SECONDS = 10;
 
     private ?int $stopSignal = null;
 
     public function __construct(
         private SubscriptionConsumer $consumer,
-        private StartSubscriptionProcess $startProcess,
+        private StartConsumerProcess $startProcess,
         private TerminationSignal $terminationSignal,
+        private ConsumerConfig $config,
         private ExceptionHandler $exceptions,
     ) {}
 
     /**
-     * @param  list<string>  $subscriptionNames
+     * @param  non-empty-list<string>  $subscriptionNames
      * @param  Closure(string, string): void  $writeOutput
      */
     public function supervise(array $subscriptionNames, Closure $writeOutput): bool
     {
-        $this->ensureCanSupervise($subscriptionNames);
+        $processCount = $this->preflight($subscriptionNames);
         $generation = $this->terminationSignal->current();
-        $subscriptions = array_map(
-            static fn (string $name): SupervisedSubscription => new SupervisedSubscription($name),
-            $subscriptionNames,
+        $consumers = array_map(
+            static fn (array $subscriptionNames): SupervisedConsumer => new SupervisedConsumer($subscriptionNames),
+            $this->assignments($subscriptionNames, $processCount),
         );
-        $nextTerminationPoll = $this->now() + self::TERMINATION_POLL_SECONDS;
+        $nextTerminationPollAt = $this->now() + self::TERMINATION_POLL_INTERVAL_SECONDS;
 
         while ($this->stopSignal === null) {
             $now = $this->now();
 
-            foreach ($subscriptions as $subscription) {
-                $this->monitor($subscription, $writeOutput, $now);
+            foreach ($consumers as $consumer) {
+                $this->monitor($consumer, $writeOutput, $now);
             }
 
-            if ($now >= $nextTerminationPoll) {
+            if ($now >= $nextTerminationPollAt) {
                 $this->checkForTermination($generation);
-                $nextTerminationPoll = $now + self::TERMINATION_POLL_SECONDS;
+                $nextTerminationPollAt = $now + self::TERMINATION_POLL_INTERVAL_SECONDS;
             }
 
             $this->pause();
         }
 
-        return $this->stopAll($subscriptions, $this->stopSignal ?? SIGTERM);
+        return $this->stopAll($consumers, $this->stopSignal ?? SIGTERM);
     }
 
     public function stop(int $signal): void
@@ -64,65 +65,90 @@ class ConsumerSupervisor
         $this->stopSignal ??= $signal;
     }
 
-    /**
-     * @param  list<string>  $subscriptionNames
-     */
-    private function ensureCanSupervise(array $subscriptionNames): void
+    /** @param  non-empty-list<string>  $subscriptionNames */
+    private function preflight(array $subscriptionNames): int
     {
         $this->startProcess->ensureSupported();
+        $processCount = $this->config->processes();
+        $this->config->idleWaitMilliseconds();
 
-        foreach ($subscriptionNames as $subscription) {
-            $this->consumer->ensureCanConsume($subscription);
+        foreach ($subscriptionNames as $subscriptionName) {
+            $this->consumer->ensureCanConsume($subscriptionName);
         }
+
+        return $processCount;
     }
 
     /**
-     * @param  Closure(string, string): void  $writeOutput
+     * @param  non-empty-list<string>  $subscriptionNames
+     * @return non-empty-list<non-empty-list<string>>
      */
+    private function assignments(array $subscriptionNames, int $configuredProcessCount): array
+    {
+        $processCount = min($configuredProcessCount, count($subscriptionNames));
+        $minimumSize = intdiv(count($subscriptionNames), $processCount);
+        $largerAssignments = count($subscriptionNames) % $processCount;
+        $assignments = [[$subscriptionNames[0]]];
+        $assignmentIndex = 0;
+        $assignmentSize = $minimumSize + ($largerAssignments > 0 ? 1 : 0);
+
+        for ($index = 1, $count = count($subscriptionNames); $index < $count; $index++) {
+            if (count($assignments[$assignmentIndex]) === $assignmentSize) {
+                $assignmentIndex++;
+                $assignmentSize = $minimumSize
+                    + ($assignmentIndex < $largerAssignments ? 1 : 0);
+                $assignments[$assignmentIndex] = [$subscriptionNames[$index]];
+
+                continue;
+            }
+
+            $assignments[$assignmentIndex][] = $subscriptionNames[$index];
+        }
+
+        return array_values($assignments);
+    }
+
+    /** @param  Closure(string, string): void  $writeOutput */
     private function startWhenReady(
-        SupervisedSubscription $subscription,
+        SupervisedConsumer $consumer,
         Closure $writeOutput,
         float $now,
     ): void {
-        if ($this->stopSignal !== null || ! $subscription->isReadyToStart($now)) {
+        if ($this->stopSignal !== null || ! $consumer->isReadyToStart($now)) {
             return;
         }
 
         try {
-            $process = ($this->startProcess)($subscription->name, $writeOutput);
+            $process = ($this->startProcess)($consumer->subscriptionNames, $writeOutput);
         } catch (Throwable $exception) {
-            $this->report(ConsumerException::subscriptionProcessCouldNotStart(
-                $subscription->name,
+            $this->report(ConsumerException::consumerProcessCouldNotStart(
+                $consumer->subscriptionNames,
                 $exception,
             ));
-            $subscription->markAsFailed($now);
+            $consumer->markAsFailed($this->now());
 
             return;
         }
 
-        $subscription->markAsStarted($process, $now);
+        $consumer->markAsStarted($process, $this->now());
     }
 
-    /**
-     * @param  Closure(string, string): void  $writeOutput
-     */
+    /** @param  Closure(string, string): void  $writeOutput */
     private function monitor(
-        SupervisedSubscription $subscription,
+        SupervisedConsumer $consumer,
         Closure $writeOutput,
         float $now,
     ): void {
-        $process = $subscription->process();
+        $process = $consumer->process();
 
-        if (! $process instanceof SubscriptionProcess) {
-            $this->startWhenReady($subscription, $writeOutput, $now);
+        if (! $process instanceof ConsumerProcess) {
+            $this->startWhenReady($consumer, $writeOutput, $now);
 
             return;
         }
 
         if ($process->isRunning()) {
-            if ($subscription->resetBackoffWhenStable($now)) {
-                $this->logRecovery($subscription->name);
-            }
+            $consumer->resetBackoffWhenStable($now);
 
             return;
         }
@@ -131,7 +157,7 @@ class ConsumerSupervisor
             $this->report($exception);
         }
 
-        $subscription->markAsFailed($now);
+        $consumer->markAsFailed($this->now());
     }
 
     private function checkForTermination(?string $generation): void
@@ -149,52 +175,44 @@ class ConsumerSupervisor
         }
     }
 
-    /**
-     * @param  list<SupervisedSubscription>  $subscriptions
-     */
-    private function stopAll(array $subscriptions, int $signal): bool
+    /** @param  list<SupervisedConsumer>  $consumers */
+    private function stopAll(array $consumers, int $signal): bool
     {
-        $this->signalAll($subscriptions, $signal);
-        $this->waitForProcessesToStop($subscriptions);
+        $this->signalAll($consumers, $signal);
+        $this->waitForProcessesToStop($consumers);
 
-        return ! $this->killRemaining($subscriptions);
+        return ! $this->killRemaining($consumers);
     }
 
-    /**
-     * @param  list<SupervisedSubscription>  $subscriptions
-     */
-    private function signalAll(array $subscriptions, int $signal): void
+    /** @param  list<SupervisedConsumer>  $consumers */
+    private function signalAll(array $consumers, int $signal): void
     {
-        foreach ($subscriptions as $subscription) {
+        foreach ($consumers as $consumer) {
             try {
-                $subscription->process()?->signal($signal);
+                $consumer->process()?->signal($signal);
             } catch (Throwable $exception) {
-                $this->logSignalFailure($subscription->name, $exception);
+                $this->logSignalFailure($consumer, $exception);
             }
         }
     }
 
-    /**
-     * @param  list<SupervisedSubscription>  $subscriptions
-     */
-    private function waitForProcessesToStop(array $subscriptions): void
+    /** @param  list<SupervisedConsumer>  $consumers */
+    private function waitForProcessesToStop(array $consumers): void
     {
-        $deadline = $this->now() + self::SHUTDOWN_SECONDS;
+        $deadline = $this->now() + self::SHUTDOWN_TIMEOUT_SECONDS;
 
-        while ($this->hasRunningProcess($subscriptions) && $this->now() < $deadline) {
+        while ($this->hasRunningProcess($consumers) && $this->now() < $deadline) {
             $this->pause();
         }
     }
 
-    /**
-     * @param  list<SupervisedSubscription>  $subscriptions
-     */
-    private function killRemaining(array $subscriptions): bool
+    /** @param  list<SupervisedConsumer>  $consumers */
+    private function killRemaining(array $consumers): bool
     {
         $forced = false;
 
-        foreach ($subscriptions as $subscription) {
-            $process = $subscription->process();
+        foreach ($consumers as $consumer) {
+            $process = $consumer->process();
 
             if ($process?->isRunning() !== true) {
                 continue;
@@ -202,47 +220,39 @@ class ConsumerSupervisor
 
             $forced = true;
             $process->kill();
-            $this->logForcedShutdown($subscription->name);
+            $this->logForcedShutdown($consumer);
         }
 
         return $forced;
     }
 
-    /**
-     * @param  list<SupervisedSubscription>  $subscriptions
-     */
-    private function hasRunningProcess(array $subscriptions): bool
+    /** @param  list<SupervisedConsumer>  $consumers */
+    private function hasRunningProcess(array $consumers): bool
     {
-        return array_any($subscriptions, fn (SupervisedSubscription $subscription): bool => $subscription->process()?->isRunning() === true);
+        return array_any(
+            $consumers,
+            static fn (SupervisedConsumer $consumer): bool => $consumer->process()?->isRunning() === true,
+        );
     }
 
-    private function logForcedShutdown(string $subscription): void
+    private function logForcedShutdown(SupervisedConsumer $consumer): void
     {
         try {
             Log::warning('Spoolrail forcefully stopped an unresponsive consumer process.', [
-                'subscription' => $subscription,
+                'subscriptions' => $consumer->subscriptionNames,
             ]);
         } catch (Throwable) {
             // Shutdown must complete even when secondary logging fails.
         }
     }
 
-    private function logRecovery(string $subscription): void
-    {
-        try {
-            Log::notice('Spoolrail subscription recovered.', [
-                'subscription' => $subscription,
-            ]);
-        } catch (Throwable) {
-            // Recovery reporting must not interrupt a healthy subscription.
-        }
-    }
-
-    private function logSignalFailure(string $subscription, Throwable $exception): void
-    {
+    private function logSignalFailure(
+        SupervisedConsumer $consumer,
+        Throwable $exception,
+    ): void {
         try {
             Log::warning('Spoolrail could not signal a consumer process during shutdown.', [
-                'subscription' => $subscription,
+                'subscriptions' => $consumer->subscriptionNames,
                 'exception' => $exception,
             ]);
         } catch (Throwable) {

@@ -5,9 +5,17 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Contracts;
 
 use Closure;
+use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
-use Spoolrail\Spoolrail\TransportContext;
+use Throwable;
 
+/**
+ * @template TReceipt
+ *
+ * Consumer operations invoke exactly one outcome closure, either inline or
+ * later. A failure reported through $fail leaves the driver usable; unusable
+ * shared transport state throws instead.
+ */
 interface Driver
 {
     /**
@@ -23,12 +31,34 @@ interface Driver
     ): void;
 
     /**
-     * The driver retains its native receipt while invoking the handoff with the serialized body.
-     * A normal handoff return authorizes the driver to settle the source delivery.
-     * A handoff exception must leave it unsettled, stop consumption, and propagate unchanged.
-     * A settlement failure must also stop consumption and report that the handoff may be repeated.
-     *
-     * @param  Closure(string, TransportContext): void  $handoff
+     * @param  Closure(list<Delivery<TReceipt>>): void  $received
+     * @param  Closure(Throwable): void  $fail
      */
-    public function consume(string $subscription, Closure $handoff): void;
+    public function receive(
+        string $subscription,
+        Closure $received,
+        Closure $fail,
+    ): void;
+
+    /**
+     * @param  Delivery<TReceipt>  $delivery
+     * @param  Closure(): void  $acknowledged
+     * @param  Closure(Throwable): void  $fail
+     */
+    public function acknowledge(
+        Delivery $delivery,
+        Closure $acknowledged,
+        Closure $fail,
+    ): void;
+
+    /**
+     * @param  Delivery<TReceipt>  $delivery
+     * @param  Closure(): void  $released
+     * @param  Closure(Throwable): void  $fail
+     */
+    public function release(
+        Delivery $delivery,
+        Closure $released,
+        Closure $fail,
+    ): void;
 }

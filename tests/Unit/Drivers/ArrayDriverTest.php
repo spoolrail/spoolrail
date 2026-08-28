@@ -2,82 +2,63 @@
 
 declare(strict_types=1);
 
+use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Drivers\ArrayDriver;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
-use Spoolrail\Spoolrail\TransportContext;
 
-test('reserves an in-flight delivery from a competing consumer', function (): void {
+test('reserves one delivery per receive attempt', function (): void {
     // --- Arrange ---
     $subscriptions = new SubscriptionRegistry;
     $subscriptions->subscribe('orders', 'competing-orders', RecordingMessageHandler::class);
-
     $driver = new ArrayDriver('array', 'array', $subscriptions);
-    $driver->publish('orders', 'first order', ['correlation-id' => 'first'], 'order:1');
-    $driver->publish('orders', 'second order', ['correlation-id' => 'second']);
-
-    $bodies = [];
+    $driver->publish('orders', 'first order', []);
+    $driver->publish('orders', 'second order', []);
+    $received = [];
 
     // --- Act ---
-    $driver->consume('competing-orders', function (string $first, TransportContext $_transport) use ($driver, &$bodies): void {
-        $bodies[] = $first;
-
-        $driver->consume('competing-orders', function (string $second, TransportContext $_transport) use (&$bodies): void {
-            $bodies[] = $second;
-        });
-    });
+    $driver->receive('competing-orders', function (array $deliveries) use (&$received): void {
+        $received[] = $deliveries[0];
+    }, static function (): void {});
+    $driver->receive('competing-orders', function (array $deliveries) use (&$received): void {
+        $received[] = $deliveries[0];
+    }, static function (): void {});
 
     // --- Assert ---
-    expect($bodies)->toBe(['first order', 'second order']);
+    expect(array_map(
+        static fn (Delivery $delivery): string => $delivery->body,
+        $received,
+    ))->toBe(['first order', 'second order']);
 });
 
-test('releases a failed handoff with fresh redelivery context and stops the current drain', function (): void {
+test('releases a delivery for prompt redelivery', function (): void {
     // --- Arrange ---
     $subscriptions = new SubscriptionRegistry;
     $subscriptions->subscribe('orders', 'failing-orders', RecordingMessageHandler::class);
-
     $driver = new ArrayDriver('array', 'array', $subscriptions);
     $driver->publish('orders', 'first order', ['correlation-id' => 'first']);
-    $driver->publish('orders', 'second order', ['correlation-id' => 'second']);
-
-    $handoffs = [];
-    $contexts = [];
-    $failure = new RuntimeException('Queue handoff failed.');
+    $delivery = null;
+    $driver->receive('failing-orders', function (array $deliveries) use (&$delivery): void {
+        $delivery = $deliveries[0];
+    }, static function (): void {});
 
     // --- Act ---
-    try {
-        $driver->consume('failing-orders', function (string $body, TransportContext $transport) use (&$handoffs, &$contexts, $failure): void {
-            $handoffs[] = $body;
-            $contexts[] = $transport;
-
-            throw $failure;
-        });
-    } catch (Throwable $exception) {
-        $caught = $exception;
-    }
-
-    $remaining = [];
-    $driver->consume('failing-orders', function (string $body, TransportContext $transport) use (&$remaining, &$contexts): void {
-        $remaining[] = $body;
-        $contexts[] = $transport;
-    });
+    $released = false;
+    $driver->release(
+        $delivery,
+        function () use (&$released): void {
+            $released = true;
+        },
+        static function (): void {},
+    );
+    $redelivery = null;
+    $driver->receive('failing-orders', function (array $deliveries) use (&$redelivery): void {
+        $redelivery = $deliveries[0];
+    }, static function (): void {});
 
     // --- Assert ---
-    expect($caught ?? null)->toBe($failure);
-    expect($handoffs)->toBe(['first order']);
-    expect($remaining)->toBe(['first order', 'second order']);
-    expect($contexts[0])->not->toBe($contexts[1]);
-    expect($contexts[0]->driver)->toBe('array');
-    expect($contexts[0]->connectionName)->toBe('array');
-    expect($contexts[0]->topic)->toBe('orders');
-    expect($contexts[0]->subscription)->toBe('failing-orders');
-    expect($contexts[0]->headers)->toBe(['correlation-id' => 'first']);
-    expect($contexts[0]->transportMessageId)->toBeNull();
-    expect($contexts[0]->transportPublishedAt)->toBeNull();
-    expect($contexts[0]->redelivered)->toBeFalse();
-    expect($contexts[0]->orderingKey)->toBeNull();
-    expect($contexts[1]->headers)->toBe(['correlation-id' => 'first']);
-    expect($contexts[1]->redelivered)->toBeTrue();
-    expect($contexts[2]->headers)->toBe(['correlation-id' => 'second']);
-    expect($contexts[2]->redelivered)->toBeFalse();
+    expect($released)->toBeTrue();
+    expect($redelivery->body)->toBe('first order');
+    expect($redelivery->headers)->toBe(['correlation-id' => 'first']);
+    expect($redelivery->redelivered)->toBeTrue();
 });

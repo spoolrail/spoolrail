@@ -7,6 +7,7 @@ use Illuminate\Support\Sleep;
 use Spoolrail\Spoolrail\Connection;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\Driver;
+use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Enums\PublicationOutcome;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
@@ -230,7 +231,23 @@ test('closes a driver that owns external resources', function (): void {
             ?string $orderingKey = null,
         ): void {}
 
-        public function consume(string $subscription, Closure $handoff): void {}
+        public function receive(
+            string $subscription,
+            Closure $received,
+            Closure $fail,
+        ): void {}
+
+        public function acknowledge(
+            Delivery $delivery,
+            Closure $acknowledged,
+            Closure $fail,
+        ): void {}
+
+        public function release(
+            Delivery $delivery,
+            Closure $released,
+            Closure $fail,
+        ): void {}
 
         public function close(): void
         {
@@ -577,15 +594,4 @@ test('accepts a topic at the portable limit and rejects the next character befor
         InvalidArgumentException::class,
         "Topic [$topicOverLimit] must contain between 3 and 251 ASCII characters",
     );
-});
-
-test('rejects a non-portable subscription before raw consumption', function (): void {
-    $driver = Mockery::mock(Driver::class);
-    $driver->shouldNotReceive('consume');
-    $connection = new Connection($driver, new MessageEnvelope);
-
-    expect(fn () => $connection->consume(
-        's'.str_repeat('u', 50),
-        static function (): void {},
-    ))->toThrow(InvalidArgumentException::class);
 });

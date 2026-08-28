@@ -54,7 +54,7 @@ class SpoolrailCommand extends Command
         $connectionName = $subscription->connectionName($manager->defaultConnectionName());
 
         if ($manager->driverName($connectionName) === 'array') {
-            $consumer->consume($subscriptionName);
+            $consumer->consume([$subscriptionName], stopWhenIdle: true);
 
             return self::SUCCESS;
         }
@@ -92,7 +92,7 @@ class SpoolrailCommand extends Command
     }
 
     /**
-     * @param  list<string>  $subscriptionNames
+     * @param  non-empty-list<string>  $subscriptionNames
      */
     private function supervise(ConsumerSupervisor $supervisor, array $subscriptionNames): int
     {
@@ -101,8 +101,8 @@ class SpoolrailCommand extends Command
             fn (int $signal) => $supervisor->stop($signal),
         );
 
-        $writeOutput = function (string $subscription, string $output): void {
-            $this->output->write("[$subscription] $output");
+        $writeOutput = function (string $label, string $output): void {
+            $this->output->write("[$label] $output");
         };
 
         return $supervisor->supervise($subscriptionNames, $writeOutput)

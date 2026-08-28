@@ -8,23 +8,23 @@ use Closure;
 use Spoolrail\Spoolrail\Exceptions\ConsumerException;
 use Symfony\Component\Process\Process;
 
-class SubscriptionProcess
+/** @internal */
+class ConsumerProcess
 {
     public const int REPORTED_FAILURE_EXIT_CODE = 70;
 
+    /** @param  non-empty-list<string>  $subscriptionNames */
     public function __construct(
-        private string $subscription,
+        private array $subscriptionNames,
         private Process $process,
     ) {}
 
-    /**
-     * @param  Closure(string, string): void  $writeOutput
-     */
+    /** @param  Closure(string, string): void  $writeOutput */
     public function start(Closure $writeOutput): void
     {
         $this->process->start(
             function (string $type, string $output) use ($writeOutput): void {
-                $writeOutput($this->subscription, $output);
+                $writeOutput(implode(',', $this->subscriptionNames), $output);
 
                 if ($type === Process::OUT) {
                     $this->process->clearOutput();
@@ -59,14 +59,12 @@ class SubscriptionProcess
             return null;
         }
 
-        if ($this->process->hasBeenSignaled()) {
-            $reason = "was terminated by signal [{$this->process->getTermSignal()}]";
-        } else {
-            $reason = "exited with code [{$this->process->getExitCode()}]";
-        }
+        $reason = $this->process->hasBeenSignaled()
+            ? "was terminated by signal [{$this->process->getTermSignal()}]"
+            : "exited with code [{$this->process->getExitCode()}]";
 
-        return ConsumerException::subscriptionProcessExitedUnexpectedly(
-            $this->subscription,
+        return ConsumerException::consumerProcessExitedUnexpectedly(
+            $this->subscriptionNames,
             $reason,
         );
     }

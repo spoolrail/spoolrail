@@ -210,7 +210,7 @@ test('invokes the failure callback once after Laravel exhausts asynchronous atte
     expect(DB::connection('testing')->table('jobs')->count())->toBe(0);
 });
 
-test('redelivers a sync delivery and invokes the failure callback for each failed Queue job', function (): void {
+test('isolates sync handoff failures and redelivers until Queue accepts the delivery', function (): void {
     // --- Arrange ---
     config()->set('queue.default', 'sync');
 
@@ -220,23 +220,9 @@ test('redelivers a sync delivery and invokes the failure callback for each faile
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $failures = [];
-
-    foreach (range(1, 2) as $_) {
-        try {
-            $this->artisan('spoolrail sync-failure')->run();
-        } catch (Throwable $exception) {
-            $failures[] = $exception;
-        }
-    }
-
-    $this->artisan('spoolrail sync-failure')->run();
     $this->artisan('spoolrail sync-failure')->run();
 
     // --- Assert ---
-    expect($failures)->toHaveCount(2);
-    expect($failures[0]->getMessage())->toBe('Handler failed.');
-    expect($failures[1]->getMessage())->toBe('Handler failed.');
     expect(RecordingMessageHandler::$attempts)->toBe(3);
     expect(RecordingMessageHandler::$failedMessages)->toHaveCount(2);
     expect(RecordingMessageHandler::$failedMessages[0]->id)->toBe($published->id);
@@ -305,7 +291,7 @@ test('preserves the original Laravel failure when the queued subscription no lon
     expect(RecordingMessageHandler::$failedMessages)->toBe([]);
 });
 
-test('propagates failure callback exceptions after Laravel reports the original failure', function (): void {
+test('isolates failure callback exceptions after Laravel reports the original failure', function (): void {
     // --- Arrange ---
     config()->set('queue.default', 'sync');
 
@@ -321,19 +307,9 @@ test('propagates failure callback exceptions after Laravel reports the original 
     Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $failure = null;
-
-    try {
-        $this->artisan('spoolrail callback-failure')->run();
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
-    RecordingMessageHandler::$callbackFailure = null;
     $this->artisan('spoolrail callback-failure')->run();
 
     // --- Assert ---
-    expect($failure?->getMessage())->toBe('Failure callback failed.');
     expect($failedJobs)->toHaveCount(1);
     expect($failedJobs[0]->exception->getMessage())->toBe('Handler failed.');
     expect(RecordingMessageHandler::$failedMessages)->toHaveCount(1);

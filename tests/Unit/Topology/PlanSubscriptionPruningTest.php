@@ -11,6 +11,7 @@ use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 use Spoolrail\Spoolrail\Topology\PlanSubscriptionPruning;
+use Spoolrail\Spoolrail\Topology\SubscriptionPruningPlan;
 
 test('requires an ownership prefix before discovering owned receive-side resources', function (): void {
     config()->set('spoolrail.prefix');
@@ -30,7 +31,7 @@ test('requires an ownership prefix before discovering owned receive-side resourc
         app(OwnershipPrefix::class),
     );
 
-    expect(fn () => $plan('managed', null))
+    expect(fn (): SubscriptionPruningPlan => $plan('managed', null))
         ->toThrow(InvalidConfigException::class);
 });
 
@@ -90,7 +91,7 @@ test('refuses to discover undeclared resources when the selected connection has 
     );
 
     // --- Act & Assert ---
-    expect(fn () => $plan('managed', null))->toThrow(
+    expect(fn (): SubscriptionPruningPlan => $plan('managed', null))->toThrow(
         SubscriptionPruningException::class,
         'Spoolrail connection [managed] has no declared subscriptions, so pruning its current ownership prefix was refused.',
     );
