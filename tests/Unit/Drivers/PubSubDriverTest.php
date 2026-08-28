@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Google\ApiCore\ApiException;
 use Google\ApiCore\InsecureCredentialsWrapper;
 use Google\Cloud\Core\Exception\ServiceException;
 use Google\Cloud\PubSub\PubSubClient;
@@ -283,6 +284,59 @@ test('retries a transient exactly-once acknowledgment without blocking another r
         $driver->waitForConsumerIo();
     }
 
+    expect($acknowledged)->toBeTrue();
+    expect($failure)->toBeNull();
+    $driver->close();
+});
+
+test('preserves an exactly-once acknowledgment retry when a due attempt fails synchronously', function (): void {
+    // --- Arrange ---
+    $handler = new GuzzleMockHandler([
+        pubSubPullResponse(1),
+        new RejectedPromise(new ApiException(
+            'Pub/Sub is temporarily unavailable.',
+            Code::UNAVAILABLE,
+            'UNAVAILABLE',
+        )),
+        static function (): never {
+            throw new ApiException(
+                'Pub/Sub is temporarily unavailable.',
+                Code::UNAVAILABLE,
+                'UNAVAILABLE',
+            );
+        },
+        new Response(200, ['Content-Type' => 'application/json'], '{}'),
+    ]);
+    $driver = pubSubDriver(subscriberHandler: $handler);
+    $delivery = null;
+    $acknowledged = false;
+    $failure = null;
+    $driver->receive('warehouse-orders', function (array $deliveries) use (&$delivery): void {
+        $delivery = $deliveries[0];
+    }, static function (): void {});
+    $driver->waitForConsumerIo();
+
+    // --- Act ---
+    $driver->acknowledge(
+        $delivery,
+        function () use (&$acknowledged): void {
+            $acknowledged = true;
+        },
+        function (Throwable $exception) use (&$failure): void {
+            $failure = $exception;
+        },
+    );
+    $driver->waitForConsumerIo();
+
+    usleep(1_100_000);
+    $driver->waitForConsumerIo();
+
+    usleep(2_100_000);
+    for ($tick = 0; $tick < 5 && ! $acknowledged && ! $failure instanceof Throwable; $tick++) {
+        $driver->waitForConsumerIo();
+    }
+
+    // --- Assert ---
     expect($acknowledged)->toBeTrue();
     expect($failure)->toBeNull();
     $driver->close();

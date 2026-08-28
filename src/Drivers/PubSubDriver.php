@@ -503,11 +503,12 @@ class PubSubDriver implements CanClose, CanManageTopology, CanWaitForConsumerIo,
     private function startDueAcknowledgmentRetries(): void
     {
         $now = microtime(true);
-        $pending = [];
+        $retries = $this->acknowledgmentRetries;
+        $this->acknowledgmentRetries = [];
 
-        foreach ($this->acknowledgmentRetries as $retry) {
+        foreach ($retries as $retry) {
             if ($retry['due_at'] > $now) {
-                $pending[] = $retry;
+                $this->acknowledgmentRetries[] = $retry;
 
                 continue;
             }
@@ -520,8 +521,6 @@ class PubSubDriver implements CanClose, CanManageTopology, CanWaitForConsumerIo,
                 $retry['started_at'],
             );
         }
-
-        $this->acknowledgmentRetries = $pending;
     }
 
     private function nextRetryDelayMicroseconds(): ?int
