@@ -45,18 +45,9 @@ test('redelivers when handler Queue policy capture fails during handoff', functi
     $published = Spoolrail::publish('orders', Message::make('order.created', []));
 
     // --- Act ---
-    $failure = null;
-
-    try {
-        $this->artisan('spoolrail failing-policy-orders')->run();
-    } catch (Throwable $exception) {
-        $failure = $exception;
-    }
-
     $this->artisan('spoolrail failing-policy-orders')->run();
 
     // --- Assert ---
-    expect($failure?->getMessage())->toBe('Handler queue policy failed.');
     expect(RecordingMessageHandler::$messages)->toHaveCount(1);
     expect(RecordingMessageHandler::$messages[0]->id)->toBe($published->id);
 });

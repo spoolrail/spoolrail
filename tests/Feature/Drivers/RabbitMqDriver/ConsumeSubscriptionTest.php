@@ -2,72 +2,93 @@
 
 declare(strict_types=1);
 
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
+use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Message;
-use Spoolrail\Spoolrail\MessageEnvelope;
+use Spoolrail\Spoolrail\Subscriptions\SubscriptionConsumer;
+use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithDatabaseQueue;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithRabbitMq;
+use Spoolrail\Spoolrail\Tests\Concerns\RecordsConsumerFailures;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
-use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
-use Spoolrail\Spoolrail\TransportContext;
 
-uses(InteractsWithRabbitMq::class);
+uses(
+    InteractsWithDatabaseQueue::class,
+    InteractsWithRabbitMq::class,
+    RecordsConsumerFailures::class,
+);
 
-test('returns every unsettled prefetched RabbitMQ delivery after a failed handoff', function (): void {
+test('processes two RabbitMQ subscriptions through the sync queue in one shared runtime', function (): void {
     // --- Arrange ---
-    $queue = app(OwnershipPrefix::class)->current().'-warehouse';
-
-    config()->set('spoolrail.connections.rabbitmq.prefetch', 3);
-
-    Spoolrail::subscribe('orders', 'warehouse', RecordingMessageHandler::class)
+    config()->set('queue.default', 'sync');
+    RecordingMessageHandler::reset();
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('rabbitmq');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
         ->onConnection('rabbitmq');
     $this->artisan('spoolrail:ensure-topology')->run();
-    foreach (['first', 'second', 'third', 'fourth'] as $reference) {
-        Spoolrail::connection('rabbitmq')->publish(
-            'orders',
-            Message::make('order.created', ['reference' => $reference]),
-        );
-    }
-
-    $envelope = new MessageEnvelope;
-    $handoffs = [];
-    $failure = new RuntimeException('Laravel Queue handoff failed.');
-    $caught = null;
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, static function () use ($consumer): void {
+        if (RecordingMessageHandler::$messages !== []
+            && count(RecordingMessageHandler::$messages) === 2) {
+            $consumer->stop();
+        }
+    });
+    Spoolrail::connection('rabbitmq')->publish(
+        'orders',
+        Message::make('order.created', ['reference' => 'A-42']),
+    );
 
     // --- Act ---
-    try {
-        Spoolrail::connection('rabbitmq')->consume(
-            'warehouse',
-            function (string $body, TransportContext $_transport) use ($envelope, &$handoffs, $failure): void {
-                $reference = $envelope->decode($body)->payload['reference'];
-                $handoffs[] = $reference;
-
-                if ($reference === 'second') {
-                    throw $failure;
-                }
-            },
-        );
-    } catch (Throwable $exception) {
-        $caught = $exception;
-    }
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
 
     // --- Assert ---
-    $remaining = array_map(
-        fn (array $delivery): array => [
-            'reference' => $envelope->decode($delivery['payload'])->payload['reference'],
-            'redelivered' => $delivery['redelivered'],
-        ],
-        $this->drainRabbitMqDeliveries($queue, 4),
+    $subscriptions = array_map(
+        static fn (Message $message): ?string => $message->transport?->subscription,
+        RecordingMessageHandler::$messages,
     );
-    usort(
-        $remaining,
-        static fn (array $left, array $right): int => $left['reference'] <=> $right['reference'],
+    sort($subscriptions);
+    expect($this->consumerFailures)->toBe([]);
+    expect($subscriptions)->toBe(['billing-orders', 'warehouse-orders']);
+});
+
+test('queues two RabbitMQ subscriptions through the database queue in one shared runtime', function (): void {
+    // --- Arrange ---
+    RecordingMessageHandler::reset();
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('rabbitmq');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
+        ->onConnection('rabbitmq');
+    $this->artisan('spoolrail:ensure-topology')->run();
+    $consumer = app(SubscriptionConsumer::class);
+    $queuedJobs = [];
+    Event::listen(JobQueued::class, static function (JobQueued $event) use ($consumer, &$queuedJobs): void {
+        $queuedJobs[] = $event->job;
+
+        if (count($queuedJobs) === 2) {
+            $consumer->stop();
+        }
+    });
+    Spoolrail::connection('rabbitmq')->publish(
+        'orders',
+        Message::make('order.created', ['reference' => 'A-42']),
     );
 
-    expect($caught)->toBe($failure);
-    expect($handoffs)->toBe(['first', 'second']);
-    expect($remaining)->toBe([
-        ['reference' => 'fourth', 'redelivered' => true],
-        ['reference' => 'second', 'redelivered' => true],
-        ['reference' => 'third', 'redelivered' => true],
-    ]);
+    // --- Act ---
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
+
+    // --- Assert ---
+    $subscriptions = array_map(
+        static fn (mixed $job): ?string => $job instanceof HandleMessageJob
+            ? $job->message->transport?->subscription
+            : null,
+        $queuedJobs,
+    );
+    sort($subscriptions);
+    expect($this->consumerFailures)->toBe([]);
+    expect(DB::connection('testing')->table('jobs')->count())->toBe(2);
+    expect($subscriptions)->toBe(['billing-orders', 'warehouse-orders']);
 });

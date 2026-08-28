@@ -2,123 +2,92 @@
 
 declare(strict_types=1);
 
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
+use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Message;
+use Spoolrail\Spoolrail\Subscriptions\SubscriptionConsumer;
+use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithDatabaseQueue;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithSnsSqs;
+use Spoolrail\Spoolrail\Tests\Concerns\RecordsConsumerFailures;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
-use Spoolrail\Spoolrail\TransportContext;
 
-uses(InteractsWithSnsSqs::class);
+uses(
+    InteractsWithDatabaseQueue::class,
+    InteractsWithSnsSqs::class,
+    RecordsConsumerFailures::class,
+);
 
-test('leases one SQS batch and settles only deliveries whose handoffs succeed', function (): void {
+test('processes two SQS subscriptions through the sync queue in one shared runtime', function (): void {
     // --- Arrange ---
-    config()->set('spoolrail.connections.snssqs.fifo', false);
-    config()->set('spoolrail.connections.snssqs.receive_batch_size', 3);
+    config()->set('queue.default', 'sync');
+    RecordingMessageHandler::reset();
     Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
         ->onConnection('snssqs');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
+        ->onConnection('snssqs');
     $this->artisan('spoolrail:ensure-topology')->run();
-
-    $queueUrl = $this->sqsQueueUrl('warehouse-orders', false);
-    $this->sqs->setQueueAttributes([
-        'QueueUrl' => $queueUrl,
-        'Attributes' => ['VisibilityTimeout' => '2'],
-    ]);
-
-    $publishedMessages = [
-        Spoolrail::connection('snssqs')->publish(
-            'orders',
-            Message::make('order.created', ['sequence' => 'first']),
-        ),
-        Spoolrail::connection('snssqs')->publish(
-            'orders',
-            Message::make('order.created', ['sequence' => 'second']),
-        ),
-        Spoolrail::connection('snssqs')->publish(
-            'orders',
-            Message::make('order.created', ['sequence' => 'third']),
-        ),
-    ];
-    $availableCount = 0;
-    $availabilityDeadline = microtime(true) + 3;
-
-    do {
-        $availableCount = (int) ($this->sqs->getQueueAttributes([
-            'QueueUrl' => $queueUrl,
-            'AttributeNames' => ['ApproximateNumberOfMessages'],
-        ])->get('Attributes')['ApproximateNumberOfMessages'] ?? 0);
-
-        if ($availableCount < 3) {
-            usleep(20_000);
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, static function () use ($consumer): void {
+        if (count(RecordingMessageHandler::$messages) === 2) {
+            $consumer->stop();
         }
-    } while ($availableCount < 3 && microtime(true) < $availabilityDeadline);
-
-    expect($availableCount)->toBe(3);
-
-    $handedOffIds = [];
-    $failure = new RuntimeException('Stop on the second handoff.');
-    $caught = null;
+    });
+    Spoolrail::connection('snssqs')->publish(
+        'orders',
+        Message::make('order.created', ['reference' => 'A-42']),
+    );
 
     // --- Act ---
-    try {
-        Spoolrail::connection('snssqs')->consume(
-            'warehouse-orders',
-            function (string $body, TransportContext $_context) use (&$handedOffIds, $failure): void {
-                $handedOffIds[] = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['id'];
-
-                if (count($handedOffIds) === 2) {
-                    throw $failure;
-                }
-            },
-        );
-    } catch (Throwable $exception) {
-        $caught = $exception;
-    }
-
-    $deliveriesAvailableDuringLease = [];
-    $leaseObservationDeadline = microtime(true) + 0.5;
-
-    do {
-        $deliveriesAvailableDuringLease = $this->sqs->receiveMessage([
-            'QueueUrl' => $queueUrl,
-            'MaxNumberOfMessages' => 10,
-            'WaitTimeSeconds' => 0,
-            'AttributeNames' => ['All'],
-        ])->get('Messages') ?? [];
-
-        if ($deliveriesAvailableDuringLease === []) {
-            usleep(20_000);
-        }
-    } while ($deliveriesAvailableDuringLease === [] && microtime(true) < $leaseObservationDeadline);
-
-    $publishedIds = array_map(static fn (Message $message): string => $message->id, $publishedMessages);
-    $expectedRedeliveryIds = array_values(array_diff($publishedIds, [$handedOffIds[0]]));
-    $redeliveries = [];
-    $redeliveryDeadline = microtime(true) + 10;
-
-    do {
-        foreach ($this->sqs->receiveMessage([
-            'QueueUrl' => $queueUrl,
-            'MaxNumberOfMessages' => count($expectedRedeliveryIds) - count($redeliveries),
-            'WaitTimeSeconds' => 0,
-            'AttributeNames' => ['All'],
-        ])->get('Messages') ?? [] as $delivery) {
-            $id = json_decode($delivery['Body'], true, flags: JSON_THROW_ON_ERROR)['id'];
-            $redeliveries[$id] = $delivery;
-        }
-
-        if (count($redeliveries) < count($expectedRedeliveryIds)) {
-            usleep(20_000);
-        }
-    } while (count($redeliveries) < count($expectedRedeliveryIds) && microtime(true) < $redeliveryDeadline);
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
 
     // --- Assert ---
-    expect($caught)->toBe($failure);
-    expect($handedOffIds)->toHaveCount(2);
-    expect($deliveriesAvailableDuringLease)->toBe([]);
+    $subscriptions = array_map(
+        static fn (Message $message): ?string => $message->transport?->subscription,
+        RecordingMessageHandler::$messages,
+    );
+    sort($subscriptions);
+    expect($this->consumerFailures)->toBe([]);
+    expect($subscriptions)->toBe(['billing-orders', 'warehouse-orders']);
+});
 
-    $redeliveredIds = array_keys($redeliveries);
-    sort($expectedRedeliveryIds);
-    sort($redeliveredIds);
+test('queues two SQS subscriptions through the database queue in one shared runtime', function (): void {
+    // --- Arrange ---
+    RecordingMessageHandler::reset();
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('snssqs');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
+        ->onConnection('snssqs');
+    $this->artisan('spoolrail:ensure-topology')->run();
+    $consumer = app(SubscriptionConsumer::class);
+    $queuedJobs = [];
+    Event::listen(JobQueued::class, static function (JobQueued $event) use ($consumer, &$queuedJobs): void {
+        $queuedJobs[] = $event->job;
 
-    expect($redeliveredIds)->toBe($expectedRedeliveryIds);
+        if (count($queuedJobs) === 2) {
+            $consumer->stop();
+        }
+    });
+    Spoolrail::connection('snssqs')->publish(
+        'orders',
+        Message::make('order.created', ['reference' => 'A-42']),
+    );
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
+
+    // --- Assert ---
+    $subscriptions = array_map(
+        static fn (mixed $job): ?string => $job instanceof HandleMessageJob
+            ? $job->message->transport?->subscription
+            : null,
+        $queuedJobs,
+    );
+    sort($subscriptions);
+    expect($this->consumerFailures)->toBe([]);
+    expect(DB::connection('testing')->table('jobs')->count())->toBe(2);
+    expect($subscriptions)->toBe(['billing-orders', 'warehouse-orders']);
 });

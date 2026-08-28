@@ -6,29 +6,42 @@ namespace Spoolrail\Spoolrail\Drivers;
 
 use Aws\Exception\AwsException;
 use Aws\Exception\CredentialsException;
+use Aws\ResultInterface;
 use Aws\Sns\SnsClient;
 use Aws\Sqs\SqsClient;
+use Carbon\CarbonImmutable;
 use Closure;
+use GuzzleHttp\Handler\CurlMultiHandler;
 use InvalidArgumentException;
 use Ramsey\Uuid\Uuid;
+use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
+use Spoolrail\Spoolrail\Contracts\CanWaitForConsumerIo;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Contracts\TopologyPlan;
+use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Exceptions\ConsumptionException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
 use Spoolrail\Spoolrail\SnsSqs\ConnectionConfig;
-use Spoolrail\Spoolrail\SnsSqs\Delivery;
+use Spoolrail\Spoolrail\SnsSqs\Receipt;
 use Spoolrail\Spoolrail\SnsSqs\ResourceName;
+use Spoolrail\Spoolrail\Subscriptions\GuzzleConsumerReactor;
 use Spoolrail\Spoolrail\Subscriptions\Subscription;
-use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
-use Spoolrail\Spoolrail\TransportContext;
 use Throwable;
 use UnexpectedValueException;
 
-class SnsSqsDriver implements CanManageTopology, Driver
+/**
+ * @implements Driver<Receipt>
+ */
+class SnsSqsDriver implements CanClose, CanManageTopology, CanWaitForConsumerIo, Driver
 {
     private const string DEFAULT_MESSAGE_GROUP = 'spoolrail';
+
+    /** @var array<string, string> */
+    private array $queueUrls = [];
+
+    private GuzzleConsumerReactor $consumerReactor;
 
     public function __construct(
         private ConnectionConfig $config,
@@ -36,8 +49,14 @@ class SnsSqsDriver implements CanManageTopology, Driver
         private SqsClient $sqs,
         private CanManageTopology $topology,
         private OwnershipPrefix $ownershipPrefix,
-        private SubscriptionRegistry $subscriptions,
-    ) {}
+        CurlMultiHandler $httpHandler,
+        int $idleWaitMilliseconds = 100,
+    ) {
+        $this->consumerReactor = new GuzzleConsumerReactor(
+            $httpHandler,
+            $idleWaitMilliseconds,
+        );
+    }
 
     /**
      * @param  array<string, string>  $headers
@@ -65,30 +84,126 @@ class SnsSqsDriver implements CanManageTopology, Driver
         }
     }
 
-    /**
-     * @param  Closure(string, TransportContext): void  $handoff
-     */
-    public function consume(string $subscription, Closure $handoff): void
-    {
-        $definition = $this->subscriptions->findOrFail($subscription);
-        $queueName = ResourceName::queue(
-            $this->ownershipPrefix->current(),
-            $subscription,
-            $this->config->fifo(),
-        );
+    public function receive(
+        string $subscription,
+        Closure $received,
+        Closure $fail,
+    ): void {
+        try {
+            $queueUrl = $this->queueUrl($subscription);
+            $promise = $this->sqs->receiveMessageAsync($this->receiveRequest($queueUrl));
+        } catch (Throwable $exception) {
+            $fail(ConsumptionException::consumerStopped($exception));
 
-        $queueUrl = $this->queueUrl($queueName);
-
-        for (; ;) {
-            foreach ($this->receive($queueUrl) as $delivery) {
-                $handoff(
-                    $delivery->body,
-                    $this->transportContext($definition, $delivery),
-                );
-
-                $this->settle($queueUrl, $delivery);
-            }
+            return;
         }
+
+        $this->consumerReactor->track(
+            $promise,
+            function (ResultInterface $result) use ($queueUrl, $received, $fail): void {
+                try {
+                    $deliveries = $this->deliveries($queueUrl, $result->get('Messages'));
+                } catch (Throwable $exception) {
+                    $fail($exception);
+
+                    return;
+                }
+
+                $received($deliveries);
+            },
+            function (Throwable $exception) use ($fail): void {
+                $fail(ConsumptionException::consumerStopped($exception));
+            },
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function receiveRequest(string $queueUrl): array
+    {
+        $request = [
+            'QueueUrl' => $queueUrl,
+            'MaxNumberOfMessages' => $this->config->receiveBatchSize(),
+            'WaitTimeSeconds' => 20,
+            'AttributeNames' => ['All'],
+            'MessageAttributeNames' => ['All'],
+        ];
+
+        if ($this->config->fifo()) {
+            $request['ReceiveRequestAttemptId'] = Uuid::uuid4()->toString();
+        }
+
+        return $request;
+    }
+
+    /**
+     * @param  Delivery<Receipt>  $delivery
+     */
+    public function acknowledge(
+        Delivery $delivery,
+        Closure $acknowledged,
+        Closure $fail,
+    ): void {
+        try {
+            $promise = $this->sqs->deleteMessageAsync([
+                'QueueUrl' => $delivery->receipt->queueUrl,
+                'ReceiptHandle' => $delivery->receipt->handle,
+            ]);
+        } catch (Throwable $exception) {
+            $fail(ConsumptionException::settlementFailed($exception));
+
+            return;
+        }
+
+        $this->consumerReactor->track(
+            $promise,
+            function () use ($acknowledged): void {
+                $acknowledged();
+            },
+            function (Throwable $exception) use ($fail): void {
+                $fail(ConsumptionException::settlementFailed($exception));
+            },
+        );
+    }
+
+    /**
+     * @param  Delivery<Receipt>  $delivery
+     */
+    public function release(
+        Delivery $delivery,
+        Closure $released,
+        Closure $fail,
+    ): void {
+        try {
+            $promise = $this->sqs->changeMessageVisibilityAsync([
+                'QueueUrl' => $delivery->receipt->queueUrl,
+                'ReceiptHandle' => $delivery->receipt->handle,
+                'VisibilityTimeout' => 0,
+            ]);
+        } catch (Throwable $exception) {
+            $fail(ConsumptionException::settlementFailed($exception));
+
+            return;
+        }
+
+        $this->consumerReactor->track(
+            $promise,
+            function () use ($released): void {
+                $released();
+            },
+            function (Throwable $exception) use ($fail): void {
+                $fail(ConsumptionException::settlementFailed($exception));
+            },
+        );
+    }
+
+    public function waitForConsumerIo(): void
+    {
+        $this->consumerReactor->wait();
+    }
+
+    public function close(): void
+    {
+        $this->consumerReactor->cancelPending();
     }
 
     /**
@@ -194,16 +309,19 @@ class SnsSqsDriver implements CanManageTopology, Driver
         return $status !== null && $status >= 400 && $status < 500 && $status !== 408;
     }
 
-    private function queueUrl(string $queueName): string
+    private function queueUrl(string $subscription): string
     {
-        try {
-            $queueUrl = $this->sqs->getQueueUrl([
-                'QueueName' => $queueName,
-                'QueueOwnerAWSAccountId' => $this->config->accountId(),
-            ])->get('QueueUrl');
-        } catch (Throwable $exception) {
-            throw ConsumptionException::consumerStopped($exception);
+        if (isset($this->queueUrls[$subscription])) {
+            return $this->queueUrls[$subscription];
         }
+
+        $queueName = ResourceName::queue(
+            $this->ownershipPrefix->current(),
+            $subscription,
+            $this->config->fifo(),
+        );
+
+        $queueUrl = $this->findQueueUrl($queueName);
 
         if (! is_string($queueUrl) || $queueUrl === '') {
             throw ConsumptionException::consumerStopped(
@@ -211,61 +329,125 @@ class SnsSqsDriver implements CanManageTopology, Driver
             );
         }
 
-        return $queueUrl;
+        return $this->queueUrls[$subscription] = $queueUrl;
     }
 
-    /**
-     * @return list<Delivery>
-     */
-    private function receive(string $queueUrl): array
+    private function findQueueUrl(string $queueName): mixed
     {
-        $request = [
-            'QueueUrl' => $queueUrl,
-            'MaxNumberOfMessages' => $this->config->receiveBatchSize(),
-            'WaitTimeSeconds' => 20,
-            'AttributeNames' => ['All'],
-            'MessageAttributeNames' => ['All'],
-        ];
-
-        if ($this->config->fifo()) {
-            $request['ReceiveRequestAttemptId'] = Uuid::uuid4()->toString();
-        }
-
         try {
-            $messages = $this->sqs->receiveMessage($request)->get('Messages');
+            return $this->sqs->getQueueUrl([
+                'QueueName' => $queueName,
+                'QueueOwnerAWSAccountId' => $this->config->accountId(),
+            ])->get('QueueUrl');
         } catch (Throwable $exception) {
             throw ConsumptionException::consumerStopped($exception);
         }
-
-        return Delivery::fromMessages($messages);
     }
 
-    private function transportContext(
-        Subscription $subscription,
-        Delivery $delivery,
-    ): TransportContext {
-        return new TransportContext(
-            driver: 'snssqs',
-            connectionName: $this->config->connectionName,
-            topic: $subscription->topic(),
-            subscription: $subscription->name(),
-            headers: $delivery->headers(),
-            transportMessageId: $delivery->transportMessageId(),
-            transportPublishedAt: $delivery->publishedAt(),
-            redelivered: $delivery->wasRedelivered(),
-            orderingKey: $delivery->orderingKey(),
+    /**
+     * @return list<Delivery<Receipt>>
+     */
+    private function deliveries(string $queueUrl, mixed $messages): array
+    {
+        if (! is_array($messages)) {
+            return [];
+        }
+
+        $deliveries = [];
+
+        foreach ($messages as $message) {
+            $deliveries[] = $this->delivery($queueUrl, $message);
+        }
+
+        return $deliveries;
+    }
+
+    /** @return Delivery<Receipt> */
+    private function delivery(string $queueUrl, mixed $message): Delivery
+    {
+        if (! is_array($message)) {
+            throw ConsumptionException::consumerStopped(
+                new UnexpectedValueException('SQS returned an invalid message delivery.'),
+            );
+        }
+
+        $attributes = $this->messageMap($message, 'Attributes');
+        $sentTimestamp = $this->optionalString($attributes, 'SentTimestamp');
+        $receiveCount = $this->optionalString($attributes, 'ApproximateReceiveCount');
+
+        return new Delivery(
+            body: $this->requiredMessageString($message, 'Body'),
+            receipt: new Receipt(
+                $queueUrl,
+                $this->requiredMessageString($message, 'ReceiptHandle'),
+            ),
+            headers: $this->messageHeaders($this->messageMap($message, 'MessageAttributes')),
+            transportMessageId: $this->optionalString($message, 'MessageId'),
+            transportPublishedAt: $sentTimestamp !== null && ctype_digit($sentTimestamp)
+                ? CarbonImmutable::createFromTimestampMsUTC((int) $sentTimestamp)
+                : null,
+            redelivered: $receiveCount !== null && ctype_digit($receiveCount)
+                ? (int) $receiveCount > 1
+                : null,
+            orderingKey: $this->optionalString($attributes, 'MessageGroupId'),
         );
     }
 
-    private function settle(string $queueUrl, Delivery $delivery): void
+    /** @param  array<array-key, mixed>  $values */
+    private function optionalString(array $values, string $key): ?string
     {
-        try {
-            $this->sqs->deleteMessage([
-                'QueueUrl' => $queueUrl,
-                'ReceiptHandle' => $delivery->receiptHandle,
-            ]);
-        } catch (Throwable $exception) {
-            throw ConsumptionException::settlementFailed($exception);
+        $value = $values[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $message
+     */
+    private function requiredMessageString(array $message, string $key): string
+    {
+        $value = $message[$key] ?? null;
+
+        if (! is_string($value) || $value === '') {
+            throw ConsumptionException::consumerStopped(
+                new UnexpectedValueException('SQS returned a delivery without a body or receipt handle.'),
+            );
         }
+
+        return $value;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $message
+     * @return array<array-key, mixed>
+     */
+    private function messageMap(array $message, string $key): array
+    {
+        $value = $message[$key] ?? null;
+
+        return is_array($value) ? $value : [];
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function messageHeaders(array $attributes): array
+    {
+        $headers = [];
+
+        foreach ($attributes as $name => $attribute) {
+            if (! is_string($name)) {
+                continue;
+            }
+            if (! is_array($attribute)) {
+                continue;
+            }
+            $headers[$name] = $attribute['StringValue']
+                ?? $attribute['BinaryValue']
+                ?? $attribute;
+        }
+
+        return $headers;
     }
 }

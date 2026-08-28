@@ -32,15 +32,16 @@ class Connection
 
     private const int AWS_STRING_DATA_TYPE_BYTES = 6;
 
+    /** @var Driver<covariant mixed>|null */
     private ?Driver $resolvedDriver = null;
 
     /**
-     * @var (Closure(): Driver)|null
+     * @var (Closure(): Driver<covariant mixed>)|null
      */
     private ?Closure $resolveDriver = null;
 
     /**
-     * @param  Driver|(Closure(): Driver)  $driver
+     * @param  Driver<covariant mixed>|(Closure(): Driver<covariant mixed>)  $driver
      */
     public function __construct(
         Driver|Closure $driver,
@@ -176,28 +177,6 @@ class Connection
     }
 
     /**
-     * @param  Closure(string, TransportContext): void  $handoff
-     */
-    public function consume(string $subscription, Closure $handoff): void
-    {
-        if (! LogicalName::isValidSubscription($subscription)) {
-            throw new InvalidArgumentException(
-                "Subscription [$subscription] must contain between 3 and 50 ASCII characters, begin with a letter, and otherwise contain only letters, digits, hyphens, and underscores.",
-            );
-        }
-
-        $this->driver()->consume($subscription, $handoff);
-    }
-
-    /**
-     * @internal
-     */
-    public function ensureConfigured(): void
-    {
-        $this->driver();
-    }
-
-    /**
      * @param  array<array-key, mixed>  $headers
      */
     private function ensureHeadersArePortable(array $headers): void
@@ -302,6 +281,19 @@ class Connection
         }
     }
 
+    /**
+     * @internal
+     *
+     * @return Driver<covariant mixed>
+     */
+    public function consumerDriver(): Driver
+    {
+        return $this->driver();
+    }
+
+    /**
+     * @return Driver<covariant mixed>
+     */
     private function driver(): Driver
     {
         if ($this->resolvedDriver instanceof Driver) {

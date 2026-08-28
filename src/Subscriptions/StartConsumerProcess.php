@@ -9,14 +9,13 @@ use Illuminate\Contracts\Foundation\Application;
 use Spoolrail\Spoolrail\Exceptions\ConsumerException;
 use Symfony\Component\Process\Process;
 
-class StartSubscriptionProcess
+/** @internal */
+class StartConsumerProcess
 {
     private string $artisan;
 
-    public function __construct(
-        Application $app,
-        ?string $artisan = null,
-    ) {
+    public function __construct(Application $app, ?string $artisan = null)
+    {
         $this->artisan = $artisan ?? $app->basePath('artisan');
     }
 
@@ -36,17 +35,18 @@ class StartSubscriptionProcess
     }
 
     /**
+     * @param  non-empty-list<string>  $subscriptionNames
      * @param  Closure(string, string): void  $writeOutput
      */
-    public function __invoke(string $subscription, Closure $writeOutput): SubscriptionProcess
+    public function __invoke(array $subscriptionNames, Closure $writeOutput): ConsumerProcess
     {
-        $process = new SubscriptionProcess(
-            $subscription,
+        $process = new ConsumerProcess(
+            $subscriptionNames,
             new Process([
                 PHP_BINARY,
                 $this->artisan,
                 'spoolrail:consume',
-                $subscription,
+                ...$subscriptionNames,
             ], timeout: null),
         );
         $process->start($writeOutput);

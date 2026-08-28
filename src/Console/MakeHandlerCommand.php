@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Spoolrail\Spoolrail\Console;
 
 use Illuminate\Console\GeneratorCommand;
+use Override;
 
 class MakeHandlerCommand extends GeneratorCommand
 {
@@ -21,6 +22,7 @@ class MakeHandlerCommand extends GeneratorCommand
         return __DIR__.'/stubs/message-handler.stub';
     }
 
+    #[Override]
     protected function getDefaultNamespace($rootNamespace): string
     {
         return $rootNamespace.'\Messages';

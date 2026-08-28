@@ -119,12 +119,15 @@ return [
     | Consumer Supervision
     |--------------------------------------------------------------------------
     |
-    | Repeated reports for the same consumer failure category are throttled
-    | for the number of seconds configured below.
+    | Subscriptions on one connection are distributed across this many child
+    | processes. The idle wait is an advanced reactor tuning escape hatch.
+    | Repeated reports for one failure category are throttled by the cooldown.
     |
     */
 
     'consumer' => [
+        'processes' => 1,
+        'idle_wait_milliseconds' => 100,
         'exception_cooldown' => 300,
     ],
 

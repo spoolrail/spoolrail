@@ -9,6 +9,7 @@
         }
     ],
     "require": {
+        "ext-curl": "*",
         "ext-pcntl": "*",
         "ext-pdo": "*",
         "php": "^8.4",

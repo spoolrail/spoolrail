@@ -99,6 +99,29 @@ test('routes clients through the configured Pub/Sub endpoint', function (): void
         ->toBe('us-central1-pubsub.googleapis.com:443');
 });
 
+test('routes the low-level subscriber through the Pub/Sub emulator', function (): void {
+    // --- Arrange ---
+    $emulatorHost = getenv('PUBSUB_EMULATOR_HOST');
+    putenv('PUBSUB_EMULATOR_HOST=127.0.0.1:8085');
+
+    try {
+        $config = new ConnectionConfig('pubsub', [
+            'project_id' => 'spoolrail',
+        ]);
+
+        // --- Act ---
+        $options = $config->subscriberClientOptions(static function (): void {});
+
+        // --- Assert ---
+        expect($options['apiEndpoint'])->toBe('127.0.0.1:8085');
+        expect($options['hasEmulator'])->toBeTrue();
+    } finally {
+        $emulatorHost === false
+            ? putenv('PUBSUB_EMULATOR_HOST')
+            : putenv("PUBSUB_EMULATOR_HOST=$emulatorHost");
+    }
+});
+
 test('disables SDK retries only for single-attempt clients', function (): void {
     $config = new ConnectionConfig('pubsub', [
         'project_id' => 'spoolrail-production',

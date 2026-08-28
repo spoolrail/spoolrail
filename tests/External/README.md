@@ -46,6 +46,7 @@ Use a dedicated least-privilege IAM user on your AWS account; never use root cre
             "Effect": "Allow",
             "Action": [
                 "sqs:CreateQueue",
+                "sqs:ChangeMessageVisibility",
                 "sqs:DeleteMessage",
                 "sqs:DeleteQueue",
                 "sqs:GetQueueAttributes",

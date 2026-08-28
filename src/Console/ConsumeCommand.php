@@ -6,16 +6,17 @@ namespace Spoolrail\Spoolrail\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Debug\ExceptionHandler;
+use LogicException;
 use Spoolrail\Spoolrail\Exceptions\ConsumerException;
+use Spoolrail\Spoolrail\Subscriptions\ConsumerProcess;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionConsumer;
-use Spoolrail\Spoolrail\Subscriptions\SubscriptionProcess;
 use Throwable;
 
 class ConsumeCommand extends Command
 {
-    protected $signature = 'spoolrail:consume {subscription}';
+    protected $signature = 'spoolrail:consume {subscriptions*}';
 
-    protected $description = 'Consume one Spoolrail subscription process';
+    protected $description = 'Consume Spoolrail subscriptions in one process';
 
     protected $hidden = true;
 
@@ -23,24 +24,34 @@ class ConsumeCommand extends Command
         SubscriptionConsumer $consumer,
         ExceptionHandler $exceptions,
     ): int {
-        $subscription = $this->argument('subscription');
+        /** @var list<string> $subscriptionNames */
+        $subscriptionNames = $this->argument('subscriptions');
+
+        if ($subscriptionNames === []) {
+            throw new LogicException('A consumer process requires at least one subscription.');
+        }
+
+        $this->trap(
+            fn (): array => [SIGINT, SIGTERM, SIGQUIT],
+            function () use ($consumer): void {
+                $consumer->stop();
+            },
+        );
 
         try {
-            $consumer->consume($subscription);
+            $consumer->consume($subscriptionNames);
 
-            $failure = ConsumerException::subscriptionStoppedUnexpectedly(
-                $subscription,
-            );
+            return self::SUCCESS;
         } catch (Throwable $exception) {
-            $failure = ConsumerException::subscriptionFailed($subscription, $exception);
+            $consumerException = ConsumerException::consumerProcessFailed($subscriptionNames, $exception);
         }
 
         try {
-            $exceptions->report($failure);
+            $exceptions->report($consumerException);
         } catch (Throwable) {
             // Reporting must not prevent the supervisor from restarting this worker.
         }
 
-        return SubscriptionProcess::REPORTED_FAILURE_EXIT_CODE;
+        return ConsumerProcess::REPORTED_FAILURE_EXIT_CODE;
     }
 }

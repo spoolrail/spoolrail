@@ -92,22 +92,10 @@ readonly class ConnectionConfig
      */
     public function clientOptions(): array
     {
-        $options = [
+        return [
             'projectId' => $this->projectId(),
-            'transport' => 'rest',
+            ...$this->transportOptions(),
         ];
-
-        if (($endpoint = $this->endpoint()) !== null) {
-            $options['apiEndpoint'] = $endpoint;
-        }
-
-        if ($this->credentials instanceof ServiceAccountCredentials) {
-            $options['credentials'] = $this->credentials;
-        } elseif ((bool) getenv('PUBSUB_EMULATOR_HOST')) {
-            $options['credentials'] = new InsecureCredentialsWrapper;
-        }
-
-        return $options;
     }
 
     /**
@@ -119,6 +107,79 @@ readonly class ConnectionConfig
             ...$this->clientOptions(),
             'disableRetries' => true,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function subscriberClientOptions(callable $httpHandler): array
+    {
+        $options = [
+            ...$this->transportOptions(),
+            'disableRetries' => true,
+            'transportConfig' => [
+                'rest' => ['httpHandler' => $httpHandler],
+            ],
+        ];
+
+        if ($this->usingEmulator()) {
+            $options['hasEmulator'] = true;
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function transportOptions(): array
+    {
+        $options = ['transport' => 'rest'];
+
+        if (($endpoint = $this->clientEndpoint()) !== null) {
+            $options['apiEndpoint'] = $endpoint;
+        }
+
+        return [...$options, ...$this->credentialOptions()];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function credentialOptions(): array
+    {
+        if ($this->credentials instanceof ServiceAccountCredentials) {
+            return ['credentials' => $this->credentials];
+        }
+
+        if ((bool) getenv('PUBSUB_EMULATOR_HOST')) {
+            return ['credentials' => new InsecureCredentialsWrapper];
+        }
+
+        return [];
+    }
+
+    private function usingEmulator(): bool
+    {
+        return $this->endpoint() === null && $this->emulatorEndpoint() !== null;
+    }
+
+    private function clientEndpoint(): ?string
+    {
+        if (($endpoint = $this->endpoint()) !== null) {
+            return $endpoint;
+        }
+
+        return $this->emulatorEndpoint();
+    }
+
+    private function emulatorEndpoint(): ?string
+    {
+        $emulator = getenv('PUBSUB_EMULATOR_HOST');
+
+        return is_string($emulator) && trim($emulator) !== ''
+            ? $emulator
+            : null;
     }
 
     private function resolveCredentials(): ?ServiceAccountCredentials

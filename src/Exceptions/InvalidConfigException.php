@@ -94,4 +94,9 @@ class InvalidConfigException extends InvalidArgumentException implements Spoolra
     {
         return new self("Spoolrail publisher retry setting [$setting] must be a non-negative integer.");
     }
+
+    public static function invalidConsumerSetting(string $setting): self
+    {
+        return new self("Spoolrail consumer setting [$setting] must be a positive integer.");
+    }
 }

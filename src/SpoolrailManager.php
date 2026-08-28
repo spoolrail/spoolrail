@@ -9,6 +9,8 @@ use Aws\Sqs\SqsClient;
 use Aws\Sts\StsClient;
 use Closure;
 use Google\Cloud\PubSub\PubSubClient;
+use Google\Cloud\PubSub\V1\Client\SubscriberClient;
+use GuzzleHttp\Handler\CurlMultiHandler;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Foundation\Application;
@@ -30,6 +32,7 @@ use Spoolrail\Spoolrail\RabbitMq\Topology;
 use Spoolrail\Spoolrail\SnsSqs\ConnectionConfig as SnsSqsConnectionConfig;
 use Spoolrail\Spoolrail\SnsSqs\QueuePolicy as SnsSqsQueuePolicy;
 use Spoolrail\Spoolrail\SnsSqs\Topology as SnsSqsTopology;
+use Spoolrail\Spoolrail\Subscriptions\ConsumerConfig;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Topology\OwnershipPrefix;
 
@@ -41,7 +44,7 @@ class SpoolrailManager
     private array $connections = [];
 
     /**
-     * @var array<string, Closure(Application, array<array-key, mixed>, string): Driver>
+     * @var array<string, Closure(Application, array<array-key, mixed>, string): Driver<covariant mixed>>
      */
     private array $customCreators = [];
 
@@ -165,7 +168,8 @@ class SpoolrailManager
 
     /**
      * @param  array<array-key, mixed>  $connectionConfig
-     * @param  (Closure(Application, array<array-key, mixed>, string): Driver)|null  $creator
+     * @param  (Closure(Application, array<array-key, mixed>, string): Driver<covariant mixed>)|null  $creator
+     * @return Driver<covariant mixed>
      */
     private function createDriver(
         string $connectionName,
@@ -182,6 +186,7 @@ class SpoolrailManager
 
     /**
      * @param  array<array-key, mixed>  $connectionConfig
+     * @return Driver<covariant mixed>
      */
     private function createBuiltInDriver(
         string $connectionName,
@@ -264,6 +269,7 @@ class SpoolrailManager
             new Connector,
             new Topology($connectionConfig, $managementClient),
             $this->app->make(OwnershipPrefix::class),
+            $this->app->make(ConsumerConfig::class)->idleWaitMilliseconds(),
         );
     }
 
@@ -281,7 +287,13 @@ class SpoolrailManager
         $connectionConfig = new SnsSqsConnectionConfig($connectionName, $config);
         $singleAttemptClientOptions = $connectionConfig->singleAttemptClientOptions();
         $singleAttemptSns = new SnsClient($singleAttemptClientOptions);
-        $consumerSqs = new SqsClient($connectionConfig->clientOptions());
+        $idleWaitMilliseconds = $this->app->make(ConsumerConfig::class)
+            ->idleWaitMilliseconds();
+        $httpHandler = $this->newConsumerHttpHandler($idleWaitMilliseconds);
+        $consumerOptions = $connectionConfig->clientOptions();
+        $consumerOptions['http_handler'] = $httpHandler;
+
+        $consumerSqs = new SqsClient($consumerOptions);
         $topology = new SnsSqsTopology(
             $connectionConfig,
             $singleAttemptSns,
@@ -296,7 +308,8 @@ class SpoolrailManager
             $consumerSqs,
             $topology,
             $this->app->make(OwnershipPrefix::class),
-            $this->app->make(SubscriptionRegistry::class),
+            $httpHandler,
+            $idleWaitMilliseconds,
         );
     }
 
@@ -313,14 +326,25 @@ class SpoolrailManager
 
         $connectionConfig = new PubSubConnectionConfig($connectionName, $config);
         $singleAttemptClient = new PubSubClient($connectionConfig->singleAttemptClientOptions());
+        $idleWaitMilliseconds = $this->app->make(ConsumerConfig::class)
+            ->idleWaitMilliseconds();
+        $httpHandler = $this->newConsumerHttpHandler($idleWaitMilliseconds);
 
         return new PubSubDriver(
             $connectionConfig,
             $singleAttemptClient,
-            new PubSubClient($connectionConfig->clientOptions()),
+            new SubscriberClient($connectionConfig->subscriberClientOptions($httpHandler)),
             new PubSubTopology($connectionConfig, $singleAttemptClient),
             $this->app->make(OwnershipPrefix::class),
-            $this->app->make(SubscriptionRegistry::class),
+            $httpHandler,
+            $idleWaitMilliseconds,
         );
+    }
+
+    private function newConsumerHttpHandler(int $idleWaitMilliseconds): CurlMultiHandler
+    {
+        return new CurlMultiHandler([
+            'select_timeout' => $idleWaitMilliseconds / 1_000,
+        ]);
     }
 }

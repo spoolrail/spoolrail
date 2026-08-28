@@ -7,7 +7,7 @@ use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Facades\Spoolrail;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\ConsumerSupervisor;
-use Spoolrail\Spoolrail\Subscriptions\StartSubscriptionProcess;
+use Spoolrail\Spoolrail\Subscriptions\StartConsumerProcess;
 use Spoolrail\Spoolrail\Subscriptions\TerminationSignal;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 
@@ -141,10 +141,10 @@ test('preflights lazy driver configuration before process supervision', function
     Spoolrail::subscribe('orders', 'event-orders', RecordingMessageHandler::class)
         ->onConnection('events');
 
-    $start = Mockery::mock(StartSubscriptionProcess::class);
+    $start = Mockery::mock(StartConsumerProcess::class);
     $start->expects('ensureSupported');
     $start->shouldNotReceive('__invoke');
-    app()->instance(StartSubscriptionProcess::class, $start);
+    app()->instance(StartConsumerProcess::class, $start);
 
     $termination = Mockery::mock(TerminationSignal::class);
     $termination->shouldNotReceive('current');
