@@ -48,6 +48,11 @@ class SpoolrailManager
      */
     private array $customCreators = [];
 
+    /**
+     * @var (Closure(array<string, string>): array<string, string>)|null
+     */
+    private ?Closure $transformHeadersCallback = null;
+
     public function __construct(
         private Application $app,
         private Repository $config,
@@ -66,6 +71,14 @@ class SpoolrailManager
         $this->customCreators[$driver] = $creator;
 
         return $this;
+    }
+
+    /**
+     * @param  Closure(array<string, string>): array<string, string>  $callback
+     */
+    public function transformHeadersUsing(Closure $callback): void
+    {
+        $this->transformHeadersCallback = $callback;
     }
 
     public function forgetConnection(?string $name = null): void
@@ -158,7 +171,18 @@ class SpoolrailManager
             driver: $this->outboxEnabled() ? $resolveDriver : $resolveDriver(),
             envelope: $this->envelope,
             connectionName: $connectionName,
+            transformHeadersCallback: fn (array $headers): mixed => $this->transformHeaders($headers),
         );
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    private function transformHeaders(array $headers): mixed
+    {
+        return $this->transformHeadersCallback instanceof Closure
+            ? ($this->transformHeadersCallback)($headers)
+            : $headers;
     }
 
     private function outboxEnabled(): bool
