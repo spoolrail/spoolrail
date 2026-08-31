@@ -11,11 +11,15 @@ use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Queue\Queue;
+use Spoolrail\Spoolrail\Events\MessageConsumed;
+use Spoolrail\Spoolrail\Events\MessageConsuming;
+use Spoolrail\Spoolrail\Events\MessageConsumptionFailed;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Exceptions\QueueHandoffException;
 use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\Message;
+use Throwable;
 
 class QueueHandoff
 {
@@ -52,7 +56,17 @@ class QueueHandoff
                 return;
             }
 
-            $this->pushJob($subscription, $message, $queue);
+            $this->dispatch(new MessageConsuming($message));
+
+            try {
+                $this->pushJob($subscription, $message, $queue);
+            } catch (Throwable $exception) {
+                $this->dispatch(new MessageConsumptionFailed($message, $exception));
+
+                throw $exception;
+            }
+
+            $this->dispatch(new MessageConsumed($message));
             $this->retainCompletionLock($lockProvider, $handoffKey, $expiry, $subscription, $message);
         } finally {
             $attemptLock->release();
@@ -104,6 +118,15 @@ class QueueHandoff
         $this->handlerQueuePolicy->apply($subscription->handlerClass(), $message, $job);
 
         $queue->push($job, '', $subscription->queueName());
+    }
+
+    private function dispatch(object $event): void
+    {
+        try {
+            event($event);
+        } catch (Throwable) {
+            // Observers must not enter queue handoff control flow.
+        }
     }
 
     private function newLock(

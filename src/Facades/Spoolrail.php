@@ -24,6 +24,7 @@ use Spoolrail\Spoolrail\Testing\Fakes\SpoolrailFake;
  * @method static SpoolrailManager extend(string $driver, Closure $creator)
  * @method static void forgetConnection(?string $name = null)
  * @method static Message publish(string $topic, Message $message, array<string, string> $headers = [], ?string $orderingKey = null)
+ * @method static void transformHeadersUsing(Closure(array<string, string>): array<string, string> $callback)
  * @method static void assertNothingPublished()
  * @method static void assertNotPublished(string $topic, string $type, ?Closure $callback = null)
  * @method static void assertPublished(string $topic, string $type, Closure|int|null $callback = null)

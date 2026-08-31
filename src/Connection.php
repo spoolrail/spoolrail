@@ -13,6 +13,12 @@ use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanManageTopology;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Enums\PublicationOutcome;
+use Spoolrail\Spoolrail\Events\MessagePublicationFailed;
+use Spoolrail\Spoolrail\Events\MessagePublished;
+use Spoolrail\Spoolrail\Events\MessagePublishing;
+use Spoolrail\Spoolrail\Events\MessageStaged;
+use Spoolrail\Spoolrail\Events\MessageStaging;
+use Spoolrail\Spoolrail\Events\MessageStagingFailed;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\Exceptions\MessageTooLargeException;
 use Spoolrail\Spoolrail\Exceptions\PublicationException;
@@ -42,11 +48,13 @@ class Connection
 
     /**
      * @param  Driver<covariant mixed>|(Closure(): Driver<covariant mixed>)  $driver
+     * @param  (Closure(array<string, string>): mixed)|null  $transformHeadersCallback
      */
     public function __construct(
         Driver|Closure $driver,
         private MessageEnvelope $envelope,
         private string $connectionName = 'default',
+        private ?Closure $transformHeadersCallback = null,
     ) {
         if ($driver instanceof Driver) {
             $this->resolvedDriver = $driver;
@@ -70,7 +78,7 @@ class Connection
             );
         }
 
-        $this->ensureHeadersArePortable($headers);
+        $headers = $this->validatedHeaders($headers);
         $this->ensureOrderingKeyIsPortable($orderingKey);
 
         $stampedMessage = $message->withPublishedAt(CarbonImmutable::now('UTC'));
@@ -82,17 +90,12 @@ class Connection
         }
 
         if ($this->outboxEnabled()) {
-            OutboxPublication::query()->create([
-                'connection' => $this->connectionName,
-                'topic' => $topic,
-                'message' => $this->envelope->toArray($stampedMessage),
-                'headers' => $headers,
-                'ordering_key' => $orderingKey,
-                'last_error' => null,
-            ]);
-        } else {
-            $this->publishToBroker($topic, $body, $headers, $orderingKey);
+            $this->publishToOutbox($topic, $stampedMessage, $body, $headers, $orderingKey);
+
+            return $stampedMessage;
         }
+
+        $this->publishDirectly($topic, $stampedMessage, $body, $headers, $orderingKey);
 
         return $stampedMessage;
     }
@@ -104,18 +107,93 @@ class Connection
      */
     public function publishStored(
         string $topic,
-        string $message,
+        string $body,
         array $headers,
         ?string $orderingKey,
     ): void {
-        $this->publishToBroker($topic, $message, $headers, $orderingKey);
+        $message = $this->envelope->decode($body);
+        $driver = $this->driver();
+        $retries = $this->publisherRetrySetting('times', 2);
+        $delayMilliseconds = $this->publisherRetrySetting('delay_milliseconds', 1000);
+
+        $this->dispatch(new MessagePublishing(
+            $this->connectionName,
+            $topic,
+            $message,
+            $headers,
+            $orderingKey,
+        ));
+
+        $this->publishToBroker(
+            $driver,
+            $retries,
+            $delayMilliseconds,
+            $topic,
+            $message,
+            $body,
+            $headers,
+            $orderingKey,
+        );
     }
 
     /**
      * @param  array<string, string>  $headers
      */
-    private function publishToBroker(
+    private function publishToOutbox(
         string $topic,
+        Message $message,
+        string $body,
+        array $headers,
+        ?string $orderingKey,
+    ): void {
+        $this->dispatch(new MessageStaging(
+            $this->connectionName,
+            $topic,
+            $message,
+            $headers,
+            $orderingKey,
+        ));
+
+        $headers = $this->transformPublicationHeaders($body, $headers);
+
+        try {
+            $publication = OutboxPublication::query()->create([
+                'connection' => $this->connectionName,
+                'topic' => $topic,
+                'message' => $this->envelope->toArray($message),
+                'headers' => $headers,
+                'ordering_key' => $orderingKey,
+                'last_error' => null,
+            ]);
+        } catch (Throwable $exception) {
+            $this->dispatch(new MessageStagingFailed(
+                $this->connectionName,
+                $topic,
+                $message,
+                $headers,
+                $orderingKey,
+                $exception,
+            ));
+
+            throw $exception;
+        }
+
+        $this->dispatch(new MessageStaged(
+            $this->connectionName,
+            $topic,
+            $message,
+            $headers,
+            $orderingKey,
+            $publication->id,
+        ));
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    private function publishDirectly(
+        string $topic,
+        Message $message,
         string $body,
         array $headers,
         ?string $orderingKey,
@@ -123,6 +201,90 @@ class Connection
         $driver = $this->driver();
         $retries = $this->publisherRetrySetting('times', 2);
         $delayMilliseconds = $this->publisherRetrySetting('delay_milliseconds', 1000);
+
+        $this->dispatch(new MessagePublishing(
+            $this->connectionName,
+            $topic,
+            $message,
+            $headers,
+            $orderingKey,
+        ));
+
+        $headers = $this->transformPublicationHeaders($body, $headers);
+
+        $this->publishToBroker(
+            $driver,
+            $retries,
+            $delayMilliseconds,
+            $topic,
+            $message,
+            $body,
+            $headers,
+            $orderingKey,
+        );
+    }
+
+    /**
+     * @param  Driver<covariant mixed>  $driver
+     * @param  array<string, string>  $headers
+     */
+    private function publishToBroker(
+        Driver $driver,
+        int $retries,
+        int $delayMilliseconds,
+        string $topic,
+        Message $message,
+        string $body,
+        array $headers,
+        ?string $orderingKey,
+    ): void {
+        try {
+            $this->publishWithRetries(
+                $driver,
+                $retries,
+                $delayMilliseconds,
+                $topic,
+                $body,
+                $headers,
+                $orderingKey,
+            );
+        } catch (Throwable $failure) {
+            $failure = $this->asPublicationException($failure);
+
+            $this->dispatch(new MessagePublicationFailed(
+                $this->connectionName,
+                $topic,
+                $message,
+                $headers,
+                $orderingKey,
+                $failure,
+            ));
+
+            throw $failure;
+        }
+
+        $this->dispatch(new MessagePublished(
+            $this->connectionName,
+            $topic,
+            $message,
+            $headers,
+            $orderingKey,
+        ));
+    }
+
+    /**
+     * @param  Driver<covariant mixed>  $driver
+     * @param  array<string, string>  $headers
+     */
+    private function publishWithRetries(
+        Driver $driver,
+        int $retries,
+        int $delayMilliseconds,
+        string $topic,
+        string $body,
+        array $headers,
+        ?string $orderingKey,
+    ): void {
         $unknownFailure = null;
 
         for ($attempt = 0; ; $attempt++) {
@@ -140,6 +302,44 @@ class Connection
 
                 Sleep::for($delayMilliseconds)->milliseconds();
             }
+        }
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     * @return array<string, string>
+     */
+    private function transformPublicationHeaders(string $body, array $headers): array
+    {
+        if (! $this->transformHeadersCallback instanceof Closure) {
+            return $headers;
+        }
+
+        try {
+            $candidate = ($this->transformHeadersCallback)($headers);
+
+            if (! is_array($candidate)) {
+                return $headers;
+            }
+
+            $candidate = $this->validatedHeaders($candidate);
+
+            if ($this->publicationBytes($body, $candidate) > self::MAX_PUBLICATION_BYTES) {
+                return $headers;
+            }
+        } catch (Throwable) {
+            return $headers;
+        }
+
+        return $candidate;
+    }
+
+    private function dispatch(object $event): void
+    {
+        try {
+            event($event);
+        } catch (Throwable) {
+            // Observers must not enter publication control flow.
         }
     }
 
@@ -178,8 +378,9 @@ class Connection
 
     /**
      * @param  array<array-key, mixed>  $headers
+     * @return array<string, string>
      */
-    private function ensureHeadersArePortable(array $headers): void
+    private function validatedHeaders(array $headers): array
     {
         if (count($headers) > self::MAX_HEADERS) {
             throw new InvalidArgumentException(
@@ -187,10 +388,14 @@ class Connection
             );
         }
 
+        $validated = [];
+
         foreach ($headers as $key => $value) {
             $key = $this->ensureHeaderKeyIsPortable($key);
-            $this->ensureHeaderValueIsPortable($key, $value);
+            $validated[$key] = $this->ensureHeaderValueIsPortable($key, $value);
         }
+
+        return $validated;
     }
 
     private function ensureHeaderKeyIsPortable(int|string $key): string
@@ -213,7 +418,7 @@ class Connection
         return $key;
     }
 
-    private function ensureHeaderValueIsPortable(string $key, mixed $value): void
+    private function ensureHeaderValueIsPortable(string $key, mixed $value): string
     {
         if (! is_string($value)) {
             throw new InvalidArgumentException(
@@ -232,6 +437,8 @@ class Connection
                 "Message header [$key] exceeds the 1024-byte value limit.",
             );
         }
+
+        return $value;
     }
 
     private function ensureOrderingKeyIsPortable(?string $orderingKey): void
