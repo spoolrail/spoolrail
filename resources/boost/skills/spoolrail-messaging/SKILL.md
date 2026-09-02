@@ -1,9 +1,9 @@
 ---
-name: spoolrail-development
+name: spoolrail-messaging
 description: Use when implementing or testing brokered messaging with Spoolrail in a Laravel application.
 ---
 
-# Spoolrail Development
+# Spoolrail Messaging
 
 Verify APIs and behavior against the installed Spoolrail version rather than assuming them. Consult the [Spoolrail documentation](https://spoolrail.com) to configure and operate it.
 
