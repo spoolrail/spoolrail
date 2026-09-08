@@ -12,7 +12,6 @@ use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Queue\Attributes\Tries;
 use ReflectionClass;
 use Spoolrail\Spoolrail\Contracts\MessageHandler;
-use Spoolrail\Spoolrail\Message;
 use Throwable;
 
 class HandlerQueuePolicy
@@ -32,7 +31,7 @@ class HandlerQueuePolicy
      *
      * @throws Throwable
      */
-    public function apply(string $handlerClass, Message $message, HandleMessageJob $job): void
+    public function apply(string $handlerClass, HandleMessageJob $job): void
     {
         $handler = new ReflectionClass($handlerClass)->newInstanceWithoutConstructor();
 
@@ -46,7 +45,6 @@ class HandlerQueuePolicy
         $job->timeout = $this->policyValue($handler, self::TIMEOUT_ATTRIBUTE, 'timeout');
         $job->failOnTimeout = $this->policyValue($handler, self::FAIL_ON_TIMEOUT_ATTRIBUTE, 'failOnTimeout') ?? false;
         $job->retryUntil = method_exists($handler, 'retryUntil') ? $handler->retryUntil() : null;
-        $job->middleware = method_exists($handler, 'middleware') ? $handler->middleware($message) : [];
     }
 
     private function policyValue(object $handler, string $attributeClass, string $property): mixed
