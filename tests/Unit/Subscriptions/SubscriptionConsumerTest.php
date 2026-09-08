@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Contracts\Queue\Queue;
@@ -134,7 +135,7 @@ test('discards corrupt JSON and scalar envelopes before continuing the batch', f
         throw new LogicException('The policy must only receive unsupported arrays.');
     });
     $errors = [];
-    Log::partialMock()->shouldReceive('error')->times(3)->andReturnUsing(
+    Log::partialMock()->shouldReceive('error')->times(2)->andReturnUsing(
         static function (string $message, array $context) use ($driver, &$errors): void {
             $errors[] = [$message, $context, $driver->acknowledged];
         },
@@ -161,12 +162,12 @@ test('discards corrupt JSON and scalar envelopes before continuing the batch', f
     expect($errors[0][1])->not->toHaveKeys(['body', 'receipt']);
     expect($errors[0][2])->toBe(['corrupt']);
     expect($errors[1][2])->toBe(['corrupt', 'scalar']);
-    expect($errors[2][2])->toBe(['corrupt', 'scalar', 'invalid-encoding']);
     expect($this->consumerFailures)->toBe([]);
 });
 
 test('discards an unsupported envelope only on the subscription selected by its policy', function (): void {
     // --- Arrange ---
+    Log::spy();
     $body = '{"schema":"legacy","payload":{"reference":"old"}}';
     $driver = new RuntimeDriver;
     $driver->batches = [
@@ -198,6 +199,7 @@ test('discards an unsupported envelope only on the subscription selected by its 
     $consumer->consume(['warehouse-orders', 'billing-orders']);
 
     // --- Assert ---
+    Log::shouldNotHaveReceived('error');
     expect($driver->acknowledged)->toBe(['warehouse-invalid', 'warehouse-tail']);
     expect($driver->released)->toBe(['billing-invalid', 'billing-tail']);
     expect($decisions)->toHaveCount(2);
@@ -212,6 +214,120 @@ test('discards an unsupported envelope only on the subscription selected by its 
     ));
     expect(RecordingMessageHandler::$messages)->toHaveCount(1);
     expect(RecordingMessageHandler::$messages[0]->payload['reference'])->toBe('warehouse-tail');
+});
+
+test('reports automatic discards independently for each subscription', function (): void {
+    // --- Arrange ---
+    $driver = new RuntimeDriver;
+    foreach (['warehouse-orders', 'billing-orders'] as $subscription) {
+        $driver->batches[$subscription] = [[new Delivery('{broken', $subscription), runtimeDelivery($subscription)]];
+        Spoolrail::subscribe('orders', $subscription, RecordingMessageHandler::class)
+            ->onConnection('runtime');
+    }
+    registerRuntimeDriver($driver);
+    Log::spy();
+
+    // --- Act ---
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, static function () use ($consumer): void {
+        if (count(RecordingMessageHandler::$messages) === 2) {
+            $consumer->stop();
+        }
+    });
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
+
+    // --- Assert ---
+    foreach (['warehouse-orders', 'billing-orders'] as $subscription) {
+        Log::shouldHaveReceived('error')->withArgs(
+            static fn (string $message, array $context): bool => $context['subscription'] === $subscription,
+        )->once();
+    }
+});
+
+test('reports automatic discards again after the configured cooldown', function (): void {
+    // --- Arrange ---
+    $this->freezeTime();
+    config()->set('spoolrail.consumer.exception_cooldown', 10);
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[
+        new Delivery('{broken', 'first', transportMessageId: 'first'),
+        new Delivery('{different', 'suppressed', transportMessageId: 'suppressed'),
+        runtimeDelivery('advance-time'),
+        new Delivery('{broken', 'after-cooldown', transportMessageId: 'after-cooldown'),
+        runtimeDelivery('finish'),
+    ]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, function () use ($consumer): void {
+        if (count(RecordingMessageHandler::$messages) === 1) {
+            $this->travel(10)->seconds();
+        } else {
+            $consumer->stop();
+        }
+    });
+    $reported = [];
+    Log::partialMock()->shouldReceive('error')->twice()->andReturnUsing(
+        static function (string $message, array $context) use (&$reported): void {
+            $reported[] = $context['transport_message_id'];
+        },
+    );
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    expect($reported)->toBe(['first', 'after-cooldown']);
+    expect($driver->acknowledged)->toBe(['first', 'suppressed', 'advance-time', 'after-cooldown', 'finish']);
+});
+
+test('reports every automatic discard when the cooldown is disabled', function (): void {
+    // --- Arrange ---
+    config()->set('spoolrail.consumer.exception_cooldown', 0);
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[
+        new Delivery('{broken', 'first'),
+        new Delivery('{broken', 'second'),
+        runtimeDelivery('finish'),
+    ]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Log::spy();
+
+    // --- Act ---
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, $consumer->stop(...));
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    Log::shouldHaveReceived('error')->twice();
+});
+
+test('still reports an automatic discard when the limiter fails', function (): void {
+    // --- Arrange ---
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[new Delivery('{broken', 'invalid')]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    $limiter = $this->mock(RateLimiter::class);
+    $consumer = app(SubscriptionConsumer::class);
+    $limiter->shouldReceive('attempt')->andReturnUsing(static function () use ($consumer): never {
+        $consumer->stop();
+
+        throw new RuntimeException('Cache unavailable.');
+    });
+    Log::spy();
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    Log::shouldHaveReceived('error')->once();
+    expect($driver->acknowledged)->toBe(['invalid']);
+    expect($this->consumerFailures)->toBe([]);
 });
 
 test('preserves excessive JSON depth without passing it to the invalid envelope policy', function (): void {

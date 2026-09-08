@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Spoolrail\Spoolrail\Subscriptions;
 
+use Illuminate\Cache\RateLimiter;
+use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Contracts\Queue\Queue;
@@ -37,6 +39,8 @@ class SubscriptionConsumer
         private QueueHandoff $queueHandoff,
         private ConsumerConfig $config,
         private ExceptionHandler $exceptions,
+        private RateLimiter $limiter,
+        private Repository $configuration,
     ) {}
 
     /**
@@ -289,11 +293,7 @@ class SubscriptionConsumer
         try {
             $message = $this->envelope->decode($delivery->body);
         } catch (InvalidMessageEnvelopeException $exception) {
-            if (! $this->shouldDiscardInvalidMessage($delivery->body, $transport)) {
-                throw $exception;
-            }
-
-            return $exception;
+            return $this->discardInvalidMessage($delivery->body, $transport, $exception);
         }
 
         $this->queueHandoff->push($subscription, $message->withTransport($transport), $lane->queue);
@@ -301,21 +301,36 @@ class SubscriptionConsumer
         return null;
     }
 
-    private function shouldDiscardInvalidMessage(string $body, TransportContext $transport): bool
-    {
+    private function discardInvalidMessage(
+        string $body,
+        TransportContext $transport,
+        InvalidMessageEnvelopeException $exception,
+    ): ?InvalidMessageEnvelopeException {
         try {
             $envelope = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            return in_array($exception->getCode(), [
+        } catch (JsonException $jsonException) {
+            if (in_array($jsonException->getCode(), [
                 JSON_ERROR_STATE_MISMATCH,
                 JSON_ERROR_CTRL_CHAR,
                 JSON_ERROR_SYNTAX,
                 JSON_ERROR_UTF8,
                 JSON_ERROR_UTF16,
-            ], true);
+            ], true)) {
+                return $exception;
+            }
+
+            throw $exception;
         }
 
-        return ! is_array($envelope) || $this->manager->shouldDiscardInvalidMessage($envelope, $transport);
+        if (! is_array($envelope)) {
+            return $exception;
+        }
+
+        if (! $this->manager->shouldDiscardInvalidMessage($envelope, $transport)) {
+            throw $exception;
+        }
+
+        return null;
     }
 
     /** @param Delivery<mixed> $delivery */
@@ -324,6 +339,10 @@ class SubscriptionConsumer
         Delivery $delivery,
         InvalidMessageEnvelopeException $exception,
     ): void {
+        if (! $this->shouldReportDiscard($lane, $exception)) {
+            return;
+        }
+
         try {
             Log::error('Spoolrail discarded an invalid message classified as non-retryable.', [
                 'subscription' => $lane->subscription->name(),
@@ -333,6 +352,32 @@ class SubscriptionConsumer
             ]);
         } catch (Throwable) {
             // Reporting must not interrupt consumption after settlement.
+        }
+    }
+
+    private function shouldReportDiscard(
+        SubscriptionLane $lane,
+        InvalidMessageEnvelopeException $exception,
+    ): bool {
+        $cooldown = $this->configuration->get('spoolrail.consumer.exception_cooldown', 300);
+
+        if (! is_int($cooldown) || $cooldown < 1) {
+            return true;
+        }
+
+        $subscription = $lane->subscription->name();
+        $reason = $exception->getMessage();
+        $key = "spoolrail:consumer:discard:$subscription:".hash('sha256', $reason);
+
+        try {
+            return $this->limiter->attempt(
+                $key,
+                1,
+                static fn (): bool => true,
+                $cooldown,
+            ) !== false;
+        } catch (Throwable) {
+            return true;
         }
     }
 
