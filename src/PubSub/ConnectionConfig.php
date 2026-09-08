@@ -25,6 +25,7 @@ readonly class ConnectionConfig
     ) {
         $this->projectId();
         $this->endpoint();
+        $this->emulatorEndpoint();
         $this->messageOrdering();
         $this->exactlyOnce();
         $this->receiveBatchSize();
@@ -92,9 +93,12 @@ readonly class ConnectionConfig
      */
     public function clientOptions(): array
     {
+        $options = $this->transportOptions();
+
         return [
             'projectId' => $this->projectId(),
-            ...$this->transportOptions(),
+            ...$options,
+            'emulatorHost' => $options['hasEmulator'] ? $options['apiEndpoint'] : null,
         ];
     }
 
@@ -114,19 +118,13 @@ readonly class ConnectionConfig
      */
     public function subscriberClientOptions(callable $httpHandler): array
     {
-        $options = [
+        return [
             ...$this->transportOptions(),
             'disableRetries' => true,
             'transportConfig' => [
                 'rest' => ['httpHandler' => $httpHandler],
             ],
         ];
-
-        if ($this->usingEmulator()) {
-            $options['hasEmulator'] = true;
-        }
-
-        return $options;
     }
 
     /**
@@ -134,52 +132,49 @@ readonly class ConnectionConfig
      */
     private function transportOptions(): array
     {
-        $options = ['transport' => 'rest'];
+        $emulator = $this->emulatorEndpoint();
+        $options = [
+            'transport' => 'rest',
+            'hasEmulator' => $emulator !== null,
+        ];
 
-        if (($endpoint = $this->clientEndpoint()) !== null) {
+        if (($endpoint = $emulator ?? $this->endpoint()) !== null) {
             $options['apiEndpoint'] = $endpoint;
         }
 
-        return [...$options, ...$this->credentialOptions()];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function credentialOptions(): array
-    {
-        if ($this->credentials instanceof ServiceAccountCredentials) {
-            return ['credentials' => $this->credentials];
+        if ($emulator !== null) {
+            $options['credentials'] = new InsecureCredentialsWrapper;
+        } elseif ($this->credentials instanceof ServiceAccountCredentials) {
+            $options['credentials'] = $this->credentials;
         }
 
-        if ((bool) getenv('PUBSUB_EMULATOR_HOST')) {
-            return ['credentials' => new InsecureCredentialsWrapper];
-        }
-
-        return [];
-    }
-
-    private function usingEmulator(): bool
-    {
-        return $this->endpoint() === null && $this->emulatorEndpoint() !== null;
-    }
-
-    private function clientEndpoint(): ?string
-    {
-        if (($endpoint = $this->endpoint()) !== null) {
-            return $endpoint;
-        }
-
-        return $this->emulatorEndpoint();
+        return $options;
     }
 
     private function emulatorEndpoint(): ?string
     {
         $emulator = getenv('PUBSUB_EMULATOR_HOST');
 
-        return is_string($emulator) && trim($emulator) !== ''
-            ? $emulator
-            : null;
+        if ($emulator === false || $emulator === '') {
+            return null;
+        }
+
+        if (
+            preg_match('/\A([A-Za-z0-9.-]+):([0-9]{1,5})\z/', $emulator, $parts) !== 1
+            || filter_var($parts[1], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
+            || (int) $parts[2] < 1
+            || (int) $parts[2] > 65_535
+        ) {
+            $this->reject('PUBSUB_EMULATOR_HOST', 'must be a hostname or IPv4 address with a port from 1 through 65535');
+        }
+
+        foreach (['endpoint', 'credentials'] as $setting) {
+            if ($this->optionalString($setting) !== null) {
+                $this->reject($setting, 'cannot be configured together with PUBSUB_EMULATOR_HOST');
+            }
+        }
+
+        return $emulator;
     }
 
     private function resolveCredentials(): ?ServiceAccountCredentials

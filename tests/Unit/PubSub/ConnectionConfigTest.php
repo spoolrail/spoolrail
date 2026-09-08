@@ -3,32 +3,34 @@
 declare(strict_types=1);
 
 use Google\Auth\Credentials\ServiceAccountCredentials;
+use Google\Cloud\PubSub\PubSubClient;
+use Google\Cloud\PubSub\V1\Client\SubscriberClient;
+use Google\Cloud\PubSub\V1\PullRequest;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\Psr7\Response;
 use Spoolrail\Spoolrail\Exceptions\InvalidConfigException;
 use Spoolrail\Spoolrail\PubSub\ConnectionConfig;
 
-test('leaves authentication to ADC when credentials are not configured', function (): void {
-    // --- Arrange ---
-    $emulatorHost = getenv('PUBSUB_EMULATOR_HOST');
+beforeEach(function (): void {
+    $previous = getenv('PUBSUB_EMULATOR_HOST');
     putenv('PUBSUB_EMULATOR_HOST');
 
-    try {
-        // --- Act ---
-        $config = new ConnectionConfig('pubsub', [
-            'project_id' => 'spoolrail-production',
-        ]);
-        $options = $config->clientOptions();
+    $this->beforeApplicationDestroyed(static function () use ($previous): void {
+        $previous === false ? putenv('PUBSUB_EMULATOR_HOST') : putenv("PUBSUB_EMULATOR_HOST=$previous");
+    });
+});
 
-        // --- Assert ---
-        expect($options)->toMatchArray([
-            'projectId' => 'spoolrail-production',
-            'transport' => 'rest',
-        ]);
-        expect($options)->not->toHaveKey('credentials');
-    } finally {
-        $emulatorHost === false
-            ? putenv('PUBSUB_EMULATOR_HOST')
-            : putenv("PUBSUB_EMULATOR_HOST=$emulatorHost");
-    }
+test('leaves authentication to ADC when credentials are not configured', function (): void {
+    $config = new ConnectionConfig('pubsub', [
+        'project_id' => 'spoolrail-production',
+    ]);
+    $options = $config->clientOptions();
+
+    expect($options)->toMatchArray([
+        'projectId' => 'spoolrail-production',
+        'transport' => 'rest',
+    ]);
+    expect($options)->not->toHaveKey('credentials');
 });
 
 test('defaults the Pub/Sub receive batch size to ten', function (): void {
@@ -89,38 +91,128 @@ test('supplies configured service-account credentials to clients', function (): 
     }
 });
 
-test('routes clients through the configured Pub/Sub endpoint', function (): void {
-    $config = new ConnectionConfig('pubsub', [
-        'project_id' => 'spoolrail-production',
-        'endpoint' => 'us-central1-pubsub.googleapis.com:443',
-    ]);
+test('routes publishing and consumption through the CI emulator without authentication', function (): void {
+    // --- Arrange ---
+    putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
+    $publisherHandler = new MockHandler([new Response(200, [], '{"messageIds":["local-message"]}')]);
+    $subscriberHandler = new MockHandler([new Response(200, [], '{}')]);
 
-    expect($config->clientOptions()['apiEndpoint'])
-        ->toBe('us-central1-pubsub.googleapis.com:443');
+    $config = new ConnectionConfig('pubsub', ['project_id' => 'warehouse']);
+    $publisher = new PubSubClient([
+        ...$config->singleAttemptClientOptions(),
+        'transportConfig' => ['rest' => ['httpHandler' => $publisherHandler]],
+    ]);
+    $subscriber = new SubscriberClient($config->subscriberClientOptions($subscriberHandler));
+
+    // --- Act ---
+    $publisher->topic('orders')->publish(['data' => 'order-created']);
+    $subscriber->pull(new PullRequest([
+        'subscription' => 'projects/warehouse/subscriptions/orders',
+        'max_messages' => 1,
+    ]));
+
+    // --- Assert ---
+    expect((string) $publisherHandler->getLastRequest()?->getUri()->withQuery(''))
+        ->toBe('http://pubsub:8085/v1/projects/warehouse/topics/orders:publish');
+    expect((string) $subscriberHandler->getLastRequest()?->getUri()->withQuery(''))
+        ->toBe('http://pubsub:8085/v1/projects/warehouse/subscriptions/orders:pull');
+    expect($publisherHandler->getLastRequest()?->hasHeader('Authorization'))->toBeFalse();
+    expect($subscriberHandler->getLastRequest()?->hasHeader('Authorization'))->toBeFalse();
 });
 
-test('routes the low-level subscriber through the Pub/Sub emulator', function (): void {
+test('preserves authenticated HTTPS requests for production clients', function (): void {
     // --- Arrange ---
-    $emulatorHost = getenv('PUBSUB_EMULATOR_HOST');
-    putenv('PUBSUB_EMULATOR_HOST=127.0.0.1:8085');
+    putenv('PUBSUB_EMULATOR_HOST=');
+    openssl_pkey_export(openssl_pkey_new(['private_key_bits' => 2048]), $privateKey);
+    $path = temporaryPubSubCredential([
+        'type' => 'service_account',
+        'client_email' => 'worker@warehouse.iam.gserviceaccount.com',
+        'private_key' => $privateKey,
+    ]);
+    $publisherHandler = new MockHandler([new Response(200, [], '{"messageIds":["production-message"]}')]);
+    $subscriberHandler = new MockHandler([new Response(200, [], '{}')]);
+    $authOptions = ['authHttpHandler' => static fn () => new Response(200, [], '{"access_token":"test-token","expires_in":3600,"token_type":"Bearer"}')];
 
     try {
-        $config = new ConnectionConfig('pubsub', [
-            'project_id' => 'spoolrail',
+        $config = new ConnectionConfig('production', [
+            'project_id' => 'warehouse',
+            'endpoint' => 'europe-west1-pubsub.googleapis.com:443',
+            'credentials' => $path,
+        ]);
+        $publisher = new PubSubClient([
+            ...$config->singleAttemptClientOptions(),
+            'credentialsConfig' => $authOptions,
+            'transportConfig' => ['rest' => ['httpHandler' => $publisherHandler]],
+        ]);
+        $subscriber = new SubscriberClient([
+            ...$config->subscriberClientOptions($subscriberHandler),
+            'credentialsConfig' => $authOptions,
         ]);
 
         // --- Act ---
-        $options = $config->subscriberClientOptions(static function (): void {});
+        $publisher->topic('orders')->publish(['data' => 'order-created']);
+        $subscriber->pull(new PullRequest([
+            'subscription' => 'projects/warehouse/subscriptions/orders',
+            'max_messages' => 1,
+        ]));
 
         // --- Assert ---
-        expect($options['apiEndpoint'])->toBe('127.0.0.1:8085');
-        expect($options['hasEmulator'])->toBeTrue();
+        expect((string) $publisherHandler->getLastRequest()?->getUri()->withQuery(''))
+            ->toBe('https://europe-west1-pubsub.googleapis.com/v1/projects/warehouse/topics/orders:publish');
+        expect((string) $subscriberHandler->getLastRequest()?->getUri()->withQuery(''))
+            ->toBe('https://europe-west1-pubsub.googleapis.com/v1/projects/warehouse/subscriptions/orders:pull');
+        expect($publisherHandler->getLastRequest()?->getHeaderLine('Authorization'))->toStartWith('Bearer ');
+        expect($subscriberHandler->getLastRequest()?->getHeaderLine('Authorization'))->toStartWith('Bearer ');
     } finally {
-        $emulatorHost === false
-            ? putenv('PUBSUB_EMULATOR_HOST')
-            : putenv("PUBSUB_EMULATOR_HOST=$emulatorHost");
+        unlink($path);
     }
 });
+
+test('rejects emulator routing alongside an explicit production endpoint', function (): void {
+    // --- Arrange ---
+    putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
+
+    // --- Act & Assert ---
+    expect(fn () => new ConnectionConfig('production', [
+        'project_id' => 'warehouse-production',
+        'endpoint' => 'europe-west1-pubsub.googleapis.com:443',
+    ]))->toThrow(InvalidConfigException::class, '[endpoint] cannot be configured together with PUBSUB_EMULATOR_HOST');
+});
+
+test('rejects emulator routing before loading explicit credentials', function (): void {
+    // --- Arrange ---
+    putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
+
+    // --- Act & Assert ---
+    expect(fn () => new ConnectionConfig('production', [
+        'project_id' => 'warehouse-production',
+        'credentials' => '/not-mounted/production-credentials.json',
+    ]))->toThrow(InvalidConfigException::class, '[credentials] cannot be configured together with PUBSUB_EMULATOR_HOST');
+});
+
+test('rejects emulator conflicts introduced after configuration construction', function (): void {
+    // --- Arrange ---
+    $config = new ConnectionConfig('production', [
+        'project_id' => 'warehouse',
+        'endpoint' => 'europe-west1-pubsub.googleapis.com:443',
+    ]);
+    putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
+
+    // --- Act & Assert ---
+    expect(fn () => $config->singleAttemptClientOptions())
+        ->toThrow(InvalidConfigException::class, '[endpoint] cannot be configured together with PUBSUB_EMULATOR_HOST');
+    expect(fn () => $config->subscriberClientOptions(new MockHandler))
+        ->toThrow(InvalidConfigException::class, '[endpoint] cannot be configured together with PUBSUB_EMULATOR_HOST');
+});
+
+test('rejects a malformed emulator address instead of falling back to production', function (string $host): void {
+    // --- Arrange ---
+    putenv("PUBSUB_EMULATOR_HOST=$host");
+
+    // --- Act & Assert ---
+    expect(fn () => new ConnectionConfig('pubsub', ['project_id' => 'warehouse']))
+        ->toThrow(InvalidConfigException::class, '[PUBSUB_EMULATOR_HOST]');
+})->with([' ', '0', 'http://pubsub:8085', 'pubsub:8085/path', 'pubsub:0', 'pubsub:65536', '[::1]:8085']);
 
 test('disables SDK retries only for single-attempt clients', function (): void {
     $config = new ConnectionConfig('pubsub', [
