@@ -13,6 +13,7 @@ use Spoolrail\Spoolrail\Jobs\HandleMessageJob;
 use Spoolrail\Spoolrail\Jobs\HandlerQueuePolicy;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
+use Spoolrail\Spoolrail\TransportContext;
 
 beforeEach(function (): void {
     RecordingMessageHandler::reset();
@@ -34,8 +35,15 @@ test('uses property fallbacks and the retry deadline method', function (): void 
             return CarbonImmutable::parse('2030-02-03 04:05:06 UTC');
         }
     };
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'property-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'property-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply($handler::class, $job);
@@ -65,8 +73,15 @@ test('uses Laravel Queue attributes before same-class default properties', funct
 
         public function handle(Message $message): void {}
     };
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'attribute-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'attribute-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply($handler::class, $job);
@@ -87,8 +102,15 @@ test('ignores a retry deadline property', function (): void {
 
         public function handle(Message $message): void {}
     };
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'property-deadline-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'property-deadline-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply($handler::class, $job);
@@ -118,8 +140,15 @@ test('uses methods before properties', function (): void {
             return [11, 22];
         }
     };
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'method-property-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'method-property-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply($handler::class, $job);
@@ -146,8 +175,15 @@ test('uses methods before attributes', function (): void {
             return [11, 22];
         }
     };
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'method-attribute-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'method-attribute-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply($handler::class, $job);
@@ -163,8 +199,15 @@ test('uses a child public property before an inherited attribute', function (): 
     {
         public int $maxExceptions = 8;
     };
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'child-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'child-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply($handler::class, $job);
@@ -175,8 +218,15 @@ test('uses a child public property before an inherited attribute', function (): 
 
 test('uses an attribute declared by the handler trait before its default property', function (): void {
     // --- Arrange ---
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'trait-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'trait-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     (new HandlerQueuePolicy)->apply(RecordingMessageHandler::class, $job);

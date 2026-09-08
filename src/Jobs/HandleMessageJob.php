@@ -10,6 +10,7 @@ use ReflectionClass;
 use Spoolrail\Spoolrail\Exceptions\InvalidSubscriptionException;
 use Spoolrail\Spoolrail\Message;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
+use Spoolrail\Spoolrail\TransportContext;
 use Throwable;
 
 class HandleMessageJob
@@ -35,7 +36,6 @@ class HandleMessageJob
 
     public function __construct(
         public readonly Message $message,
-        public readonly string $subscription,
     ) {}
 
     public function middleware(): mixed
@@ -45,7 +45,7 @@ class HandleMessageJob
         }
 
         $handlerClass = Container::getInstance()->get(SubscriptionRegistry::class)
-            ->resolveForQueuedMessage($this->subscription)
+            ->resolveForQueuedMessage($this->subscriptionName())
             ->handlerClass();
 
         $handler = new ReflectionClass($handlerClass)->newInstanceWithoutConstructor();
@@ -55,7 +55,7 @@ class HandleMessageJob
 
     public function handle(SubscriptionRegistry $subscriptions, Container $container): void
     {
-        $subscription = $subscriptions->resolveForQueuedMessage($this->subscription);
+        $subscription = $subscriptions->resolveForQueuedMessage($this->subscriptionName());
         $handler = $container->get($subscription->handlerClass());
 
         $handler->handle($this->message);
@@ -68,7 +68,7 @@ class HandleMessageJob
 
         try {
             $handlerClass = $subscriptions
-                ->resolveForQueuedMessage($this->subscription)
+                ->resolveForQueuedMessage($this->subscriptionName())
                 ->handlerClass();
         } catch (InvalidSubscriptionException) {
             return;
@@ -85,5 +85,13 @@ class HandleMessageJob
         }
 
         $handler->failed($this->message, $exception);
+    }
+
+    private function subscriptionName(): string
+    {
+        /** @var TransportContext $transport */
+        $transport = $this->message->transport;
+
+        return $transport->subscription;
     }
 }

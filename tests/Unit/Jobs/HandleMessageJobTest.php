@@ -15,8 +15,15 @@ use Spoolrail\Spoolrail\TransportContext;
 test('uses the handler currently registered for its subscription when executed', function (): void {
     // --- Arrange ---
     $message = Message::make('order.created', ['reference' => 'A-42'])
-        ->withPublishedAt(CarbonImmutable::parse('2026-07-15 14:23:08.417 UTC'));
-    $job = new HandleMessageJob($message, 'warehouse-orders');
+        ->withPublishedAt(CarbonImmutable::parse('2026-07-15 14:23:08.417 UTC'))
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'warehouse-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
 
     $handled = null;
     $currentHandler = createNamedMessageHandlerMock('HandleMessageJobCurrentHandler');
@@ -45,8 +52,13 @@ test('uses the handler currently registered for its subscription when executed',
 
 test('fails when its subscription is no longer registered at execution', function (): void {
     $job = new HandleMessageJob(
-        Message::make('order.created', []),
-        'removed-subscription',
+        Message::make('order.created', [])->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'removed-subscription',
+            headers: [],
+        )),
     );
     $subscriptions = new SubscriptionRegistry;
 
@@ -58,9 +70,16 @@ test('uses a newly resolved current handler for its failure callback', function 
     // --- Arrange ---
     RecordingMessageHandler::reset();
 
-    $message = Message::make('order.created', ['reference' => 'A-42']);
+    $message = Message::make('order.created', ['reference' => 'A-42'])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'warehouse-orders',
+            headers: [],
+        ));
     $failure = new RuntimeException('Handler failed.');
-    $job = new HandleMessageJob($message, 'warehouse-orders');
+    $job = new HandleMessageJob($message);
     $resolutions = 0;
 
     app()->bind(RecordingMessageHandler::class, function () use (&$resolutions): RecordingMessageHandler {
@@ -91,8 +110,15 @@ test('uses a newly resolved current handler for its failure callback', function 
 
 test('does not resolve a handler without a failure callback', function (): void {
     // --- Arrange ---
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'warehouse-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'warehouse-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
     $handler = createNamedMessageHandlerMock('HandleMessageJobWithoutFailureCallback');
 
     $subscriptions = new SubscriptionRegistry;
@@ -115,8 +141,15 @@ test('does not resolve a handler without a failure callback', function (): void 
 
 test('propagates handler resolution failures from its failure callback', function (): void {
     // --- Arrange ---
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'warehouse-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'warehouse-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
     $resolutionFailure = new RuntimeException('Could not resolve handler.');
     $caughtFailure = null;
 
@@ -157,7 +190,7 @@ test('retains transport context when the universal job is serialized', function 
     $message = Message::make('order.created', ['reference' => 'A-42'])
         ->withPublishedAt(CarbonImmutable::parse('2026-07-15 14:23:08.417 UTC'))
         ->withTransport($transport);
-    $job = new HandleMessageJob($message, 'warehouse-orders');
+    $job = new HandleMessageJob($message);
 
     // --- Act ---
     $restored = unserialize(serialize($job));
