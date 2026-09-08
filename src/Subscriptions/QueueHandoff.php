@@ -113,7 +113,7 @@ class QueueHandoff
 
     private function pushJob(Subscription $subscription, Message $message, Queue $queue): void
     {
-        $job = new HandleMessageJob($message, $subscription->name());
+        $job = new HandleMessageJob($message);
 
         $this->handlerQueuePolicy->apply($subscription->handlerClass(), $job);
 

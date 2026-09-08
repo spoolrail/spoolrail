@@ -13,6 +13,7 @@ use Spoolrail\Spoolrail\Subscriptions\SubscriptionRegistry;
 use Spoolrail\Spoolrail\Tests\Concerns\InteractsWithDatabaseQueue;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
 use Spoolrail\Spoolrail\Tests\Fixtures\ValidatingMiddlewareMessageHandler;
+use Spoolrail\Spoolrail\TransportContext;
 
 uses(InteractsWithDatabaseQueue::class);
 
@@ -114,8 +115,15 @@ test('retries middleware construction failures in Laravel queue before reporting
 test('applies legacy captured middleware once without constructing current middleware', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'legacy-orders', ValidatingMiddlewareMessageHandler::class);
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'legacy-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'legacy-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
     $job->tries = 2;
     $middleware = new WithoutOverlapping($message->id);
     $job->middleware = [$middleware];
@@ -144,8 +152,15 @@ test('applies legacy captured middleware once without constructing current middl
 test('preserves an empty captured middleware list in legacy queued jobs', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'legacy-orders', ValidatingMiddlewareMessageHandler::class);
-    $message = Message::make('order.created', []);
-    $job = new HandleMessageJob($message, 'legacy-orders');
+    $message = Message::make('order.created', [])
+        ->withTransport(new TransportContext(
+            driver: 'array',
+            connectionName: 'array',
+            topic: 'orders',
+            subscription: 'legacy-orders',
+            headers: [],
+        ));
+    $job = new HandleMessageJob($message);
     $job->middleware = [];
     Queue::connection('database')->push($job);
 
