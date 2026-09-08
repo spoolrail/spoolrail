@@ -131,7 +131,7 @@ test('preserves authenticated HTTPS requests for production clients', function (
     ]);
     $publisherHandler = new MockHandler([new Response(200, [], '{"messageIds":["production-message"]}')]);
     $subscriberHandler = new MockHandler([new Response(200, [], '{}')]);
-    $authOptions = ['authHttpHandler' => static fn () => new Response(200, [], '{"access_token":"test-token","expires_in":3600,"token_type":"Bearer"}')];
+    $authOptions = ['authHttpHandler' => static fn (): Response => new Response(200, [], '{"access_token":"test-token","expires_in":3600,"token_type":"Bearer"}')];
 
     try {
         $config = new ConnectionConfig('production', [
@@ -173,7 +173,7 @@ test('rejects emulator routing alongside an explicit production endpoint', funct
     putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
 
     // --- Act & Assert ---
-    expect(fn () => new ConnectionConfig('production', [
+    expect(fn (): ConnectionConfig => new ConnectionConfig('production', [
         'project_id' => 'warehouse-production',
         'endpoint' => 'europe-west1-pubsub.googleapis.com:443',
     ]))->toThrow(InvalidConfigException::class, '[endpoint] cannot be configured together with PUBSUB_EMULATOR_HOST');
@@ -184,7 +184,7 @@ test('rejects emulator routing before loading explicit credentials', function ()
     putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
 
     // --- Act & Assert ---
-    expect(fn () => new ConnectionConfig('production', [
+    expect(fn (): ConnectionConfig => new ConnectionConfig('production', [
         'project_id' => 'warehouse-production',
         'credentials' => '/not-mounted/production-credentials.json',
     ]))->toThrow(InvalidConfigException::class, '[credentials] cannot be configured together with PUBSUB_EMULATOR_HOST');
@@ -199,9 +199,9 @@ test('rejects emulator conflicts introduced after configuration construction', f
     putenv('PUBSUB_EMULATOR_HOST=pubsub:8085');
 
     // --- Act & Assert ---
-    expect(fn () => $config->singleAttemptClientOptions())
+    expect(fn (): array => $config->singleAttemptClientOptions())
         ->toThrow(InvalidConfigException::class, '[endpoint] cannot be configured together with PUBSUB_EMULATOR_HOST');
-    expect(fn () => $config->subscriberClientOptions(new MockHandler))
+    expect(fn (): array => $config->subscriberClientOptions(new MockHandler))
         ->toThrow(InvalidConfigException::class, '[endpoint] cannot be configured together with PUBSUB_EMULATOR_HOST');
 });
 
@@ -210,7 +210,7 @@ test('rejects a malformed emulator address instead of falling back to production
     putenv("PUBSUB_EMULATOR_HOST=$host");
 
     // --- Act & Assert ---
-    expect(fn () => new ConnectionConfig('pubsub', ['project_id' => 'warehouse']))
+    expect(fn (): ConnectionConfig => new ConnectionConfig('pubsub', ['project_id' => 'warehouse']))
         ->toThrow(InvalidConfigException::class, '[PUBSUB_EMULATOR_HOST]');
 })->with([' ', '0', 'http://pubsub:8085', 'pubsub:8085/path', 'pubsub:0', 'pubsub:65536', '[::1]:8085']);
 

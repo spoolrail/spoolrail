@@ -160,7 +160,7 @@ readonly class ConnectionConfig
         }
 
         if (
-            preg_match('/\A([A-Za-z0-9.-]+):([0-9]{1,5})\z/', $emulator, $parts) !== 1
+            preg_match('/\A([A-Za-z0-9.-]+):(\d{1,5})\z/', $emulator, $parts) !== 1
             || filter_var($parts[1], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false
             || (int) $parts[2] < 1
             || (int) $parts[2] > 65_535

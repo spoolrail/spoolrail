@@ -8,7 +8,6 @@ use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 use DateTimeZone;
 use JsonException;
-use Ramsey\Uuid\Rfc4122\FieldsInterface;
 use Ramsey\Uuid\Uuid;
 use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 
@@ -74,17 +73,15 @@ class MessageEnvelope
     {
         $id = $envelope['id'] ?? null;
 
+        /*
+         * Publish UUIDv7 IDs, but accept any UUID version on receipt so a future
+         * version change need not require consumers to be deployed first.
+         */
         if (! is_string($id) || ! Uuid::isValid($id)) {
             throw InvalidMessageEnvelopeException::invalidId();
         }
 
-        $fields = Uuid::fromString($id)->getFields();
-
-        if ($fields instanceof FieldsInterface && $fields->getVersion() === Uuid::UUID_TYPE_UNIX_TIME) {
-            return $id;
-        }
-
-        throw InvalidMessageEnvelopeException::invalidId();
+        return $id;
     }
 
     /**
@@ -123,20 +120,44 @@ class MessageEnvelope
     {
         $timestamp = $envelope['published_at'] ?? null;
 
-        if (! is_string($timestamp)) {
+        if (! is_string($timestamp) || str_contains($timestamp, "\0")) {
             throw InvalidMessageEnvelopeException::invalidTimestamp();
         }
 
-        $publishedAt = DateTimeImmutable::createFromFormat(
-            '!'.self::TIMESTAMP_FORMAT,
-            $timestamp,
-            new DateTimeZone('UTC'),
-        );
+        /*
+         * Publish one canonical format, but accept equivalent representations on receipt
+         * so future timestamp format changes need not require consumers to be deployed first.
+         */
+        $formats = [
+            'Y-m-d\TH:i:s\Z', // 2026-07-15T14:23:08Z
+            self::TIMESTAMP_FORMAT, // 2026-07-15T14:23:08.417Z
+            'Y-m-d\TH:i:s.u\Z', // 2026-07-15T14:23:08.417123Z
+            'Y-m-d\TH:i:sP', // 2026-07-15T17:23:08+03:00
+            'Y-m-d\TH:i:s.vP', // 2026-07-15T17:23:08.417+03:00
+            'Y-m-d\TH:i:s.uP', // 2026-07-15T17:23:08.417123+03:00
+        ];
 
-        if ($publishedAt === false || $publishedAt->format(self::TIMESTAMP_FORMAT) !== $timestamp) {
-            throw InvalidMessageEnvelopeException::invalidTimestamp();
+        foreach ($formats as $format) {
+            $publishedAt = DateTimeImmutable::createFromFormat('!'.$format, $timestamp, new DateTimeZone('UTC'));
+            if ($publishedAt === false) {
+                continue;
+            }
+            if (DateTimeImmutable::getLastErrors() !== false) {
+                continue;
+            }
+
+            if (abs($publishedAt->getOffset()) >= 24 * 60 * 60) {
+                continue;
+            }
+
+            // Carbon's P validator restricts offset minutes, so match the parsed offset literally.
+            $validationFormat = str_replace('P', $publishedAt->format('P'), $format);
+
+            if (CarbonImmutable::hasFormat($timestamp, $validationFormat)) {
+                return CarbonImmutable::instance($publishedAt)->utc();
+            }
         }
 
-        return CarbonImmutable::instance($publishedAt);
+        throw InvalidMessageEnvelopeException::invalidTimestamp();
     }
 }

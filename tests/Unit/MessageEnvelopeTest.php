@@ -110,19 +110,16 @@ test('rejects wire envelopes missing a required field', function (string $field)
     'publication timestamp' => 'published_at',
 ]);
 
-test('rejects message IDs that are not UUIDv7', function (string $id): void {
+test('rejects malformed message IDs', function (): void {
     $envelope = new MessageEnvelope;
-    $json = createMessageEnvelopeJson(['id' => $id]);
+    $json = createMessageEnvelopeJson(['id' => 'not-a-uuid']);
 
     expect(fn (): Message => $envelope->decode($json))
         ->toThrow(
             InvalidMessageEnvelopeException::class,
-            'The message envelope must contain a valid UUIDv7 ID.',
+            'The message envelope must contain a valid UUID.',
         );
-})->with([
-    'malformed UUID' => 'not-a-uuid',
-    'different UUID version' => 'f81d4fae-7dec-4a0d-a765-00a0c91e6bf6',
-]);
+});
 
 test('rejects invalid message types', function (mixed $type): void {
     $envelope = new MessageEnvelope;
@@ -150,20 +147,35 @@ test('rejects payloads that are not arrays', function (): void {
         );
 });
 
-test('rejects non-canonical publication timestamps', function (string $publishedAt): void {
-    $envelope = new MessageEnvelope;
-    $json = createMessageEnvelopeJson(['published_at' => $publishedAt]);
+test('normalizes explicitly zoned publication timestamps without losing precision', function (string $timestamp, string $utc): void {
+    // --- Arrange ---
+    $json = createMessageEnvelopeJson(['published_at' => $timestamp]);
 
-    expect(fn (): Message => $envelope->decode($json))
-        ->toThrow(
-            InvalidMessageEnvelopeException::class,
-            'The message envelope must contain a valid canonical UTC millisecond timestamp.',
-        );
+    // --- Act ---
+    $message = (new MessageEnvelope)->decode($json);
+
+    // --- Assert ---
+    expect($message->publishedAt?->format('Y-m-d\TH:i:s.uP'))->toBe($utc);
 })->with([
-    'offset instead of UTC' => '2026-07-15T17:23:08.417+03:00',
-    'missing millisecond precision' => '2026-07-15T14:23:08Z',
-    'microsecond precision' => '2026-07-15T14:23:08.417000Z',
-    'invalid date' => '2026-99-15T14:23:08.417Z',
+    'whole seconds' => ['2026-07-15T14:23:08Z', '2026-07-15T14:23:08.000000+00:00'],
+    'short fraction' => ['2026-07-15T14:23:08.4Z', '2026-07-15T14:23:08.400000+00:00'],
+    'microseconds' => ['2026-07-15T14:23:08.417123Z', '2026-07-15T14:23:08.417123+00:00'],
+    'negative offset' => ['2026-07-15T09:23:08-05:00', '2026-07-15T14:23:08.000000+00:00'],
+    'fractional-hour offset' => ['2026-07-15T19:53:08.417+05:30', '2026-07-15T14:23:08.417000+00:00'],
+]);
+
+test('rejects invalid publication timestamps', function (string $timestamp): void {
+    $json = createMessageEnvelopeJson(['published_at' => $timestamp]);
+
+    expect(fn (): Message => (new MessageEnvelope)->decode($json))
+        ->toThrow(InvalidMessageEnvelopeException::class);
+})->with([
+    'missing timezone' => '2026-07-15T14:23:08',
+    'impossible date' => '2026-02-30T14:23:08Z',
+    'overflowing offset minutes' => '2026-07-15T14:23:08+03:60',
+    'overflowing offset hours' => '2026-07-15T14:23:08+24:00',
+    'null byte' => "2026-07-15T14:23:08\0Z",
+    'excess precision' => '2026-07-15T14:23:08.4171234Z',
 ]);
 
 /**
