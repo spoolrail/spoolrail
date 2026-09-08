@@ -64,21 +64,33 @@ test('uses the application default Laravel Queue connection when the subscriptio
     expect(RecordingMessageHandler::$messages)->toBe([]);
 });
 
-test('queues one job when the same message is delivered again', function (): void {
+test('preserves a non-v7 message identity and timestamp through a deduplicated handoff', function (): void {
     // --- Arrange ---
     Spoolrail::subscribe('orders', 'warehouse-order-processing', RecordingMessageHandler::class)
         ->onQueueConnection('database');
 
-    // Reusing the message preserves its UUID, as a broker redelivery does.
-    $message = Message::make('order.created', []);
-    Spoolrail::publish('orders', $message);
-    Spoolrail::publish('orders', $message);
+    $id = 'f81d4fae-7dec-4a0d-a765-00a0c91e6bf6';
+    $body = json_encode([
+        'id' => $id,
+        'type' => 'order.created',
+        'payload' => ['order_id' => 42],
+        'published_at' => '2026-07-15T17:23:08.417123+03:00',
+    ], JSON_THROW_ON_ERROR);
+    $driver = Spoolrail::connection()->consumerDriver();
+    $driver->publish('orders', $body, []);
+    $driver->publish('orders', $body, []);
 
     // --- Act ---
     $this->artisan('spoolrail warehouse-order-processing')->run();
 
+    $queuedJobs = DB::connection('testing')->table('jobs')->count();
+    $this->artisan('queue:work database --once --sleep=0')->run();
+
     // --- Assert ---
-    expect(DB::connection('testing')->table('jobs')->count())->toBe(1);
+    expect($queuedJobs)->toBe(1);
+    expect(RecordingMessageHandler::$messages[0]->id)->toBe($id);
+    expect(RecordingMessageHandler::$messages[0]->publishedAt?->format('Y-m-d\TH:i:s.u\Z'))
+        ->toBe('2026-07-15T14:23:08.417123Z');
 });
 
 test('queues the same message once for each subscription', function (): void {

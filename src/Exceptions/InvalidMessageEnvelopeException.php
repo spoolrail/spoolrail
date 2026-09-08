@@ -24,7 +24,7 @@ class InvalidMessageEnvelopeException extends UnexpectedValueException implement
 
     public static function invalidId(): self
     {
-        return new self('The message envelope must contain a valid UUIDv7 ID.');
+        return new self('The message envelope must contain a valid UUID.');
     }
 
     public static function invalidType(): self
@@ -41,6 +41,6 @@ class InvalidMessageEnvelopeException extends UnexpectedValueException implement
 
     public static function invalidTimestamp(): self
     {
-        return new self('The message envelope must contain a valid canonical UTC millisecond timestamp.');
+        return new self('The message envelope must contain a valid ISO 8601 timestamp with a timezone.');
     }
 }
