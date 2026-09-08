@@ -53,6 +53,9 @@ class SpoolrailManager
      */
     private ?Closure $transformHeadersCallback = null;
 
+    /** @var (Closure(array<array-key, mixed>, TransportContext): bool)|null */
+    private ?Closure $discardInvalidMessagesCallback = null;
+
     public function __construct(
         private Application $app,
         private Repository $config,
@@ -79,6 +82,23 @@ class SpoolrailManager
     public function transformHeadersUsing(Closure $callback): void
     {
         $this->transformHeadersCallback = $callback;
+    }
+
+    /** @param Closure(array<array-key, mixed>, TransportContext): bool $callback */
+    public function discardInvalidMessagesWhen(Closure $callback): void
+    {
+        $this->discardInvalidMessagesCallback = $callback;
+    }
+
+    /**
+     * @internal
+     *
+     * @param  array<array-key, mixed>  $envelope
+     */
+    public function shouldDiscardInvalidMessage(array $envelope, TransportContext $transport): bool
+    {
+        return $this->discardInvalidMessagesCallback instanceof Closure
+            && ($this->discardInvalidMessagesCallback)($envelope, $transport) === true;
     }
 
     public function forgetConnection(?string $name = null): void

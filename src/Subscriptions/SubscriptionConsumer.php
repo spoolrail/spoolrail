@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Queue\DatabaseQueue;
 use Illuminate\Support\Facades\Log;
+use JsonException;
 use LogicException;
 use PDO;
 use Spoolrail\Spoolrail\Contracts\CanClose;
@@ -16,6 +17,7 @@ use Spoolrail\Spoolrail\Contracts\CanWaitForConsumerIo;
 use Spoolrail\Spoolrail\Contracts\Driver;
 use Spoolrail\Spoolrail\Delivery;
 use Spoolrail\Spoolrail\Exceptions\ConsumerException;
+use Spoolrail\Spoolrail\Exceptions\InvalidMessageEnvelopeException;
 use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\SpoolrailManager;
 use Spoolrail\Spoolrail\TransportContext;
@@ -183,41 +185,58 @@ class SubscriptionConsumer
         string $connectionName,
         array $lanes,
     ): bool {
+        $lane = $this->nextReadyLane($lanes);
+
+        if (! $lane instanceof SubscriptionLane) {
+            return false;
+        }
+
+        $delivery = $lane->activateNextDelivery();
+
+        try {
+            $discarded = $this->handoff($delivery, $driverName, $connectionName, $lane);
+        } catch (Throwable $exception) {
+            $lane->failedBeforeAcknowledgment($this->now());
+            $this->report($lane, $exception);
+
+            return true;
+        }
+
+        $driver->acknowledge(
+            $delivery,
+            function () use ($lane, $delivery, $discarded): void {
+                $lane->acknowledged();
+
+                if ($discarded instanceof InvalidMessageEnvelopeException) {
+                    $this->reportDiscard($lane, $delivery, $discarded);
+                }
+            },
+            function (Throwable $exception) use ($lane): void {
+                $lane->acknowledgmentFailed($this->now());
+                $this->report($lane, $exception);
+            },
+        );
+
+        return true;
+    }
+
+    /** @param list<SubscriptionLane> $lanes */
+    private function nextReadyLane(array $lanes): ?SubscriptionLane
+    {
         $count = count($lanes);
 
         for ($offset = 0; $offset < $count; $offset++) {
             $index = ($this->nextLaneIndex + $offset) % $count;
             $lane = $lanes[$index];
 
-            if (! $lane->hasReadyDelivery()) {
-                continue;
+            if ($lane->hasReadyDelivery()) {
+                $this->nextLaneIndex = ($index + 1) % $count;
+
+                return $lane;
             }
-
-            $this->nextLaneIndex = ($index + 1) % $count;
-            $delivery = $lane->activateNextDelivery();
-
-            try {
-                $this->handoff($delivery, $driverName, $connectionName, $lane);
-            } catch (Throwable $exception) {
-                $lane->failedBeforeAcknowledgment($this->now());
-                $this->report($lane, $exception);
-
-                return true;
-            }
-
-            $driver->acknowledge(
-                $delivery,
-                fn () => $lane->acknowledged(),
-                function (Throwable $exception) use ($lane): void {
-                    $lane->acknowledgmentFailed($this->now());
-                    $this->report($lane, $exception);
-                },
-            );
-
-            return true;
         }
 
-        return false;
+        return null;
     }
 
     /**
@@ -253,23 +272,68 @@ class SubscriptionConsumer
         string $driverName,
         string $connectionName,
         SubscriptionLane $lane,
-    ): void {
+    ): ?InvalidMessageEnvelopeException {
         $subscription = $lane->subscription;
-        $message = $this->envelope->decode($delivery->body)->withTransport(
-            new TransportContext(
-                driver: $driverName,
-                connectionName: $connectionName,
-                topic: $subscription->topic(),
-                subscription: $subscription->name(),
-                headers: $delivery->headers,
-                transportMessageId: $delivery->transportMessageId,
-                transportPublishedAt: $delivery->transportPublishedAt,
-                redelivered: $delivery->redelivered,
-                orderingKey: $delivery->orderingKey,
-            ),
+        $transport = new TransportContext(
+            driver: $driverName,
+            connectionName: $connectionName,
+            topic: $subscription->topic(),
+            subscription: $subscription->name(),
+            headers: $delivery->headers,
+            transportMessageId: $delivery->transportMessageId,
+            transportPublishedAt: $delivery->transportPublishedAt,
+            redelivered: $delivery->redelivered,
+            orderingKey: $delivery->orderingKey,
         );
 
-        $this->queueHandoff->push($subscription, $message, $lane->queue);
+        try {
+            $message = $this->envelope->decode($delivery->body);
+        } catch (InvalidMessageEnvelopeException $exception) {
+            if (! $this->shouldDiscardInvalidMessage($delivery->body, $transport)) {
+                throw $exception;
+            }
+
+            return $exception;
+        }
+
+        $this->queueHandoff->push($subscription, $message->withTransport($transport), $lane->queue);
+
+        return null;
+    }
+
+    private function shouldDiscardInvalidMessage(string $body, TransportContext $transport): bool
+    {
+        try {
+            $envelope = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            return in_array($exception->getCode(), [
+                JSON_ERROR_STATE_MISMATCH,
+                JSON_ERROR_CTRL_CHAR,
+                JSON_ERROR_SYNTAX,
+                JSON_ERROR_UTF8,
+                JSON_ERROR_UTF16,
+            ], true);
+        }
+
+        return ! is_array($envelope) || $this->manager->shouldDiscardInvalidMessage($envelope, $transport);
+    }
+
+    /** @param Delivery<mixed> $delivery */
+    private function reportDiscard(
+        SubscriptionLane $lane,
+        Delivery $delivery,
+        InvalidMessageEnvelopeException $exception,
+    ): void {
+        try {
+            Log::error('Spoolrail discarded an invalid message classified as non-retryable.', [
+                'subscription' => $lane->subscription->name(),
+                'transport_message_id' => $delivery->transportMessageId,
+                'body_fingerprint' => hash('sha256', $delivery->body),
+                'reason' => $exception->getMessage(),
+            ]);
+        } catch (Throwable) {
+            // Reporting must not interrupt consumption after settlement.
+        }
     }
 
     private function report(SubscriptionLane $lane, Throwable $exception): void

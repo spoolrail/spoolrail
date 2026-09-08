@@ -115,7 +115,7 @@ class QueueHandoff
     {
         $job = new HandleMessageJob($message, $subscription->name());
 
-        $this->handlerQueuePolicy->apply($subscription->handlerClass(), $message, $job);
+        $this->handlerQueuePolicy->apply($subscription->handlerClass(), $job);
 
         $queue->push($job, '', $subscription->queueName());
     }

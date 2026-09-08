@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\Queue\Factory as QueueFactory;
+use Illuminate\Contracts\Queue\Queue;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Spoolrail\Spoolrail\Contracts\CanClose;
 use Spoolrail\Spoolrail\Contracts\CanWaitForConsumerIo;
 use Spoolrail\Spoolrail\Contracts\Driver;
@@ -17,6 +20,7 @@ use Spoolrail\Spoolrail\MessageEnvelope;
 use Spoolrail\Spoolrail\Subscriptions\SubscriptionConsumer;
 use Spoolrail\Spoolrail\Tests\Concerns\RecordsConsumerFailures;
 use Spoolrail\Spoolrail\Tests\Fixtures\RecordingMessageHandler;
+use Spoolrail\Spoolrail\TransportContext;
 
 uses(RecordsConsumerFailures::class);
 
@@ -78,7 +82,7 @@ test("releases a failed lane's batch while a healthy sibling continues", functio
     $driver = new RuntimeDriver;
     $driver->batches = [
         'warehouse-orders' => [[
-            new Delivery('not a message envelope', 'warehouse-invalid'),
+            new Delivery('{}', 'warehouse-invalid'),
             runtimeDelivery('warehouse-tail'),
         ]],
         'billing-orders' => [[
@@ -111,6 +115,277 @@ test("releases a failed lane's batch while a healthy sibling continues", functio
     expect($this->consumerFailures)->toHaveCount(1);
     expect($this->consumerFailures[0]->getPrevious())
         ->toBeInstanceOf(InvalidMessageEnvelopeException::class);
+});
+
+test('discards corrupt JSON and scalar envelopes before continuing the batch', function (): void {
+    // --- Arrange ---
+    $driver = new RuntimeDriver;
+    $invalidEncoding = str_replace('encoding-example', "\xFF", runtimeDelivery('encoding-example')->body);
+    $driver->batches['warehouse-orders'] = [[
+        new Delivery('{broken', 'corrupt', transportMessageId: 'transport-corrupt'),
+        new Delivery('null', 'scalar', transportMessageId: 'transport-scalar'),
+        new Delivery($invalidEncoding, 'invalid-encoding'),
+        runtimeDelivery('warehouse-tail'),
+    ]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Spoolrail::discardInvalidMessagesWhen(static function (): bool {
+        throw new LogicException('The policy must only receive unsupported arrays.');
+    });
+    $errors = [];
+    Log::partialMock()->shouldReceive('error')->times(3)->andReturnUsing(
+        static function (string $message, array $context) use ($driver, &$errors): void {
+            $errors[] = [$message, $context, $driver->acknowledged];
+        },
+    );
+
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, $consumer->stop(...));
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe(['corrupt', 'scalar', 'invalid-encoding', 'warehouse-tail']);
+    expect($driver->released)->toBe([]);
+    expect(RecordingMessageHandler::$messages)->toHaveCount(1);
+    expect(RecordingMessageHandler::$messages[0]->payload['reference'])->toBe('warehouse-tail');
+    expect($errors[0][0])->toBe('Spoolrail discarded an invalid message classified as non-retryable.');
+    expect($errors[0][1])->toMatchArray([
+        'subscription' => 'warehouse-orders',
+        'transport_message_id' => 'transport-corrupt',
+        'body_fingerprint' => hash('sha256', '{broken'),
+    ]);
+    expect($errors[0][1]['reason'])->toBeString()->not->toBeEmpty();
+    expect($errors[0][1])->not->toHaveKeys(['body', 'receipt']);
+    expect($errors[0][2])->toBe(['corrupt']);
+    expect($errors[1][2])->toBe(['corrupt', 'scalar']);
+    expect($errors[2][2])->toBe(['corrupt', 'scalar', 'invalid-encoding']);
+    expect($this->consumerFailures)->toBe([]);
+});
+
+test('discards an unsupported envelope only on the subscription selected by its policy', function (): void {
+    // --- Arrange ---
+    $body = '{"schema":"legacy","payload":{"reference":"old"}}';
+    $driver = new RuntimeDriver;
+    $driver->batches = [
+        'warehouse-orders' => [[
+            new Delivery($body, 'warehouse-invalid', headers: ['source' => 'legacy'], transportMessageId: 'legacy-1'),
+            runtimeDelivery('warehouse-tail'),
+        ]],
+        'billing-orders' => [[
+            new Delivery($body, 'billing-invalid'),
+            runtimeDelivery('billing-tail'),
+        ]],
+    ];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    $decisions = [];
+    Spoolrail::discardInvalidMessagesWhen(static function (array $envelope, TransportContext $transport) use (&$decisions): bool {
+        $decisions[] = [$envelope, $transport];
+
+        return $transport->subscription === 'warehouse-orders';
+    });
+
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, $consumer->stop(...));
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe(['warehouse-invalid', 'warehouse-tail']);
+    expect($driver->released)->toBe(['billing-invalid', 'billing-tail']);
+    expect($decisions)->toHaveCount(2);
+    expect($decisions[0][0])->toBe(['schema' => 'legacy', 'payload' => ['reference' => 'old']]);
+    expect($decisions[0][1])->toEqual(new TransportContext(
+        driver: 'runtime',
+        connectionName: 'runtime',
+        topic: 'orders',
+        subscription: 'warehouse-orders',
+        headers: ['source' => 'legacy'],
+        transportMessageId: 'legacy-1',
+    ));
+    expect(RecordingMessageHandler::$messages)->toHaveCount(1);
+    expect(RecordingMessageHandler::$messages[0]->payload['reference'])->toBe('warehouse-tail');
+});
+
+test('preserves excessive JSON depth without passing it to the invalid envelope policy', function (): void {
+    // --- Arrange ---
+    $driver = new RuntimeDriver;
+    $driver->batches = [
+        'warehouse-orders' => [[new Delivery(str_repeat('[', 512).'0'.str_repeat(']', 512), 'too-deep')]],
+        'billing-orders' => [[new Delivery('[{"schema":"future"}]', 'unsupported-list')]],
+        'healthy-orders' => [[runtimeDelivery('healthy-1')]],
+    ];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Spoolrail::subscribe('orders', 'healthy-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    $envelopes = [];
+    Spoolrail::discardInvalidMessagesWhen(static function (array $envelope) use (&$envelopes): bool {
+        $envelopes[] = $envelope;
+
+        return false;
+    });
+
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, $consumer->stop(...));
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders', 'billing-orders', 'healthy-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe(['healthy-1']);
+    expect($driver->released)->toBe(['too-deep', 'unsupported-list']);
+    expect($envelopes)->toBe([[['schema' => 'future']]]);
+    expect($this->consumerFailures)->toHaveCount(2);
+});
+
+test('requires an explicit true decision before discarding an invalid envelope', function (): void {
+    // --- Arrange ---
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[new Delivery('{}', 'warehouse-invalid')]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    $consumer = app(SubscriptionConsumer::class);
+    Spoolrail::discardInvalidMessagesWhen(static function () use ($consumer): int {
+        $consumer->stop();
+
+        return 1;
+    });
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe([]);
+    expect($driver->released)->toBe(['warehouse-invalid']);
+});
+
+test('preserves the delivery and batch tail when the invalid envelope policy throws', function (): void {
+    // --- Arrange ---
+    $failure = new Error('Invalid envelope policy failed.');
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[
+        new Delivery('{}', 'warehouse-invalid'),
+        runtimeDelivery('warehouse-tail'),
+    ]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    $consumer = app(SubscriptionConsumer::class);
+    Spoolrail::discardInvalidMessagesWhen(static function () use ($failure, $consumer): bool {
+        $consumer->stop();
+
+        throw $failure;
+    });
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe([]);
+    expect($driver->released)->toBe(['warehouse-invalid', 'warehouse-tail']);
+    expect($this->consumerFailures)->toHaveCount(1);
+    expect($this->consumerFailures[0]->getPrevious())->toBe($failure);
+});
+
+test('leaves an uncertain discard unsettled and releases its batch tail without reporting success', function (): void {
+    // --- Arrange ---
+    $failure = new RuntimeException('Discard acknowledgment failed.');
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[
+        new Delivery('{broken', 'warehouse-invalid'),
+        runtimeDelivery('warehouse-tail'),
+    ]];
+    $driver->batches['billing-orders'] = [[runtimeDelivery('billing-1')]];
+    $driver->acknowledgmentFailures['warehouse-invalid'] = $failure;
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Spoolrail::subscribe('orders', 'billing-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Log::spy();
+
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, $consumer->stop(...));
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders', 'billing-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe(['billing-1']);
+    expect($driver->released)->toBe(['warehouse-tail']);
+    expect($driver->events)->toContain('acknowledge:warehouse-invalid');
+    expect($driver->events)->not->toContain('release:warehouse-invalid');
+    expect($this->consumerFailures)->toHaveCount(1);
+    expect($this->consumerFailures[0]->getPrevious())->toBe($failure);
+    Log::shouldNotHaveReceived('error');
+});
+
+test('continues the batch when reporting a successful discard throws', function (): void {
+    // --- Arrange ---
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[
+        new Delivery('{broken', 'warehouse-invalid'),
+        runtimeDelivery('warehouse-tail'),
+    ]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Log::partialMock()->shouldReceive('error')->once()->andThrow(new RuntimeException('Logger unavailable.'));
+
+    $consumer = app(SubscriptionConsumer::class);
+    Event::listen(JobProcessed::class, $consumer->stop(...));
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe(['warehouse-invalid', 'warehouse-tail']);
+    expect($driver->released)->toBe([]);
+    expect($this->consumerFailures)->toBe([]);
+});
+
+test('preserves queue failures without treating them as invalid source envelopes', function (): void {
+    // --- Arrange ---
+    $failure = InvalidMessageEnvelopeException::invalidId();
+    $driver = new RuntimeDriver;
+    $driver->batches['warehouse-orders'] = [[runtimeDelivery('warehouse-valid')]];
+    registerRuntimeDriver($driver);
+    Spoolrail::subscribe('orders', 'warehouse-orders', RecordingMessageHandler::class)
+        ->onConnection('runtime');
+    Spoolrail::discardInvalidMessagesWhen(static function (): bool {
+        throw new LogicException('A queue exception must not invoke the envelope policy.');
+    });
+    $queue = Mockery::mock(Queue::class);
+
+    $this->mock(QueueFactory::class)->shouldReceive('connection')->andReturn($queue);
+
+    $consumer = app(SubscriptionConsumer::class);
+    $queue->shouldReceive('push')->once()->andReturnUsing(static function () use ($consumer, $failure): void {
+        $consumer->stop();
+
+        throw $failure;
+    });
+
+    // --- Act ---
+    $consumer->consume(['warehouse-orders']);
+
+    // --- Assert ---
+    expect($driver->acknowledged)->toBe([]);
+    expect($driver->released)->toBe(['warehouse-valid']);
+    expect($this->consumerFailures)->toHaveCount(1);
+    expect($this->consumerFailures[0]->getPrevious())->toBe($failure);
 });
 
 test("starts a lane's next receive only after its current batch settles", function (): void {
@@ -246,7 +521,7 @@ test('continues releasing a failed batch after one release fails', function (): 
     $driver = new RuntimeDriver;
     $driver->batches = [
         'warehouse-orders' => [[
-            new Delivery('not a message envelope', 'warehouse-invalid'),
+            new Delivery('{}', 'warehouse-invalid'),
             runtimeDelivery('warehouse-tail'),
         ]],
         'billing-orders' => [[runtimeDelivery('billing-1')]],
